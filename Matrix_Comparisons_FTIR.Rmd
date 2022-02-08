@@ -1,0 +1,2125 @@
+---
+title: "Microplastics Intercalibration Study Data Analysis: Matrix Comparisons, FTIR"
+author: "Southern California Coastal Water Research Project, University of Toronto & State Water Resources Control Board of California"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: 
+    toc: true
+    toc_depth: 4
+    number_sections: true
+    toc_float: true
+---
+
+![](./www/logobanner.png)
+
+```{r Packages, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#Load packages
+library(tidyverse)#A ton of useful functions
+library(scales)#Needed for that label wrap
+library(calecopal)#Needed for color scales
+library(gridExtra)#Needed to combine plots into one figure
+library(knitr) #Needed to display table
+library(cowplot) #Needed to combine plots
+library(kableExtra) #Needed for table features (i.e., scroll_box)
+library(forcats) #Needed for reordering axes
+
+```
+
+```{r echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+Full_DB <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_results_master", guess_max = 10000)
+
+Full_DB$labid <- gsub("Lab","",as.character(Full_DB$labid))
+Full_DB$sampleid <- gsub("Lab","",as.character(Full_DB$sampleid))
+Full_DB$particleid <- gsub("Lab","",as.character(Full_DB$particleid))
+Full_DB$photoid <- gsub("Lab","",as.character(Full_DB$photoid))
+
+Results <- Full_DB %>%
+  #Removed lab D & A - incomparable with other data - deviation from methods
+  filter(!(labid == "D"&sampletype == "CW")) %>%
+  filter(!(labid == "A"&sampletype == "CW")) %>%
+  #Removed pygcms data data
+  filter(!(labid == "T"&sampletype == "CW")) %>%
+  filter(!(labid == "F"&sampletype == "CW")) %>%
+  #Removed second set from Lab N - 2nd set of samples processed
+  filter(!(labid == "N"&sampletype == "CW"&(grepl("5|6|7|8", sampleid)))) %>%   
+  rename("microscopy" = stereoscope) %>% 
+  rename("nilered" = fluorescencestaining)
+
+Lab_Info <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_labinformation", guess_max = 100000) #Import .csv file containing all lab information for other matrices
+
+#Remove "Lab" from relevant columns
+Lab_Info$labid <- gsub("Lab","",as.character(Lab_Info$labid))
+
+#Select data relating to expertise for visual microscopy
+Expertise <- Lab_Info %>%
+  select(labid, matrix, expertiseextraction, expertisevisualmicroscopy, expertisenilered, expertiseftir, expertiseraman, expertisepy_gcms)
+
+Results <- Results %>% 
+   #Join expertise data to results data frame
+   left_join(Expertise, by = c("labid" = "labid", "sampletype" = "matrix"))  
+
+Reference <- read_csv('https://mpchecker.sccwrp.org/checker/export?table=sample_spiking_info', guess_max = 100000) #Import .csv file containing all reference spiking information for all matrices including clean water
+
+QA <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_qa_master")
+
+```
+
+```{r QA Data Tidying & Join to Results, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+QA_Clean <- QA %>% 
+  
+  #Create factors for QA columns
+  mutate(qa_reportedimage = factor(qa_reportedimage, levels = c("y", "n", "ns"))) %>%
+  mutate(qa_reportedmorphology = factor(qa_reportedmorphology, levels = c("y", "n", "ns"))) %>%
+  mutate(qa_correctmorphology = factor(qa_correctmorphology, levels = c("y", "n", "ns"))) %>%
+  mutate(qa_reportedcolor = factor(qa_reportedcolor, levels = c("y", "n", "ns"))) %>%
+  mutate(qa_correctcolor = factor(qa_correctcolor, levels = c("y", "n", "ns"))) %>%
+  mutate(qa_reportedchemid = factor(qa_reportedchemid, levels = c("y", "n", "u"))) %>%
+  mutate(qa_correctchemid_ftir = factor(qa_correctchemid_ftir, levels = c("y", "n", "ns"))) %>% 
+  mutate(qa_correctchemid_raman = factor(qa_correctchemid_raman, levels = c("y", "n", "ns"))) %>% 
+  mutate(qa_fp = factor(qa_fp, levels = c("y", "n", "ns"))) %>%
+  mutate(qa_particle = factor(qa_particle, levels = c("y", "n", "ns"))) %>% 
+  
+  #Select relevant QA columns to join to main dataframe, Results
+  select(particleid, 
+         qa_reportedimage,
+         qa_reportedmorphology, 
+         qa_correctmorphology, 
+         qa_reportedcolor, 
+         qa_correctcolor, 
+         qa_reportedchemid,
+         qa_correctchemid_raman,
+         qa_correctchemid_ftir,
+         qa_fp, 
+         qa_particle, 
+         qa_morphology, 
+         qa_color, 
+         qa_chemid, 
+         qa_particlenumber)
+
+#Make any blank columns automatically NAs
+QA_Clean[QA_Clean == ""] <- NA
+
+Results <- Results %>% 
+  #Join QA data to results
+  left_join(QA_Clean, by = c("particleid" = "particleid"))
+
+#End of QA data tidying
+```
+
+```{r Results Tidying, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+Results_Clean <- Results %>%
+  #Create factor for nominal size fractions
+  mutate(sizefraction = gsub("um","µm",as.character(sizefraction))) %>% 
+  mutate(sizefraction_f = as.factor(sizefraction)) %>%
+  #Create factor for colors
+  mutate(color_f = as.factor(qa_color)) %>%
+  #Create factor for morphology
+  mutate(morphology_f = as.factor(qa_morphology)) %>% 
+  #Create factor for morphology
+  mutate(polymer_f = as.factor(qa_chemid)) %>%
+  #Create factor for microscopy
+  mutate(microscopy_f = as.factor(microscopy)) %>% 
+  #Rename and create factor for sample type
+  mutate(sampletype = case_when(
+    sampletype == "CW" ~ "Clean Water",
+    sampletype == "FT" ~ "Fish Tissue",
+    sampletype == "SD" ~ "Sediment",
+    sampletype == "DW" ~ "Dirty Water")) %>% 
+  mutate(sampletype_f = as.factor(sampletype)) %>%
+  #Create a new column to indicate which samples are blanks - all sampleids with a 4 or 8
+  mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>% 
+  #Exclude augmentation data
+  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & sampletype %in% c("Sediment"))) %>% 
+  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & sampletype %in% c("Fish Tissue")))
+
+```
+
+```{r FTIR Results, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+  
+Results_Spike_FTIR <- Results_Clean %>%
+  #Filter results to only include spike particles (yes)
+  filter(qa_particle == "y") %>%
+  #Select only data for FTIR
+  filter(ftir == "Yes") %>%   
+  #Drop particles that were not chemically ID'ed (not measured) or 'unidentifiable'
+  filter(qa_reportedchemid != "n") %>% 
+  #Drop any particles that haven't yet been evaluated - ask Syd about this
+  drop_na(qa_correctchemid_ftir) %>% 
+  #Drop "ns" in the false positive column since these only seem to be for clean water
+  filter(qa_fp != "ns")
+
+Results_Spike_Raman <- Results_Clean %>%
+  #Filter results to only include spike particles (yes)
+  filter(qa_particle == "y") %>%
+  #Select only data for Raman
+  filter(raman == "Yes") %>% 
+  #Drop particles that were not chemically ID'ed (not measured) or 'unidentifiable'
+  filter(qa_reportedchemid != "n") %>% 
+  #Drop any particles that haven't yet been evaluated - ask Syd about this
+  drop_na(qa_correctchemid_raman) %>% 
+  #Drop "ns" in the false positive column since these only seem to be for clean water
+  filter(qa_fp != "ns")
+  
+#Create data frame for plastic particles only
+Results_Spike_FTIR_Plastic <- Results_Spike_FTIR %>% 
+  filter(qa_fp != "y")
+
+#Create data frame for plastic particles only
+Results_Spike_FTIR_FP <- Results_Spike_FTIR %>% 
+  filter(qa_fp == "y")
+
+```
+
+# Raman FTIR Overall Comparison
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Calculate the proportion of results that had correct vs incorrect chem id results OVERALL, (for all particles including false positives)
+
+# Overall Accuracy
+Results_Raman_Accuracy <-  Results_Spike_Raman %>%
+   group_by(sampletype_f) %>% 
+   count(qa_correctchemid_raman == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>% 
+   rename("correct" = `qa_correctchemid_raman == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>% 
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f) %>%
+   arrange(correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop) %>% 
+   add_column(method = "Raman")
+
+# Overall Accuracy
+Results_FTIR_Accuracy <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f) %>% 
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>% 
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>% 
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f) %>%
+   arrange(correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)%>% 
+   add_column(method = "FTIR")
+
+Raman_FTIR <- full_join(Results_Raman_Accuracy, Results_FTIR_Accuracy)
+
+compare <-  Raman_FTIR %>%
+   ggplot(aes(x = method, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~sampletype_f, ncol = 4)+
+   labs(x = 'Method', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   scale_x_discrete(labels=c("y" = "False Positive", "n" = "Plastic")) + 
+   labs(title = "FTIR vs. Raman", caption = "Results are for spiked plastic and false positive particles that where chemically identified using Raman or FTIR. Data labels represent the number of particles analyzed.")
+
+compare
+
+```
+
+# Types of Particles Analyzed by FTIR
+
+```{r echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+#Size Fraction
+size <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f) %>%
+   count(sizefraction_f) %>% 
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>% 
+   ungroup() %>% 
+   group_by(sampletype_f) %>%
+   arrange(sizefraction_f, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+size_plot <-  size %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = sizefraction_f)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Material Type', y = "Prop. Correct ID's by Spiked Material Type", fill = "Reported Size Fraction")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = cal_palette("kelp1")) +
+   labs(title = "Particles Analyzed via FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+size_plot
+
+#Color
+color <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f) %>%
+   count(color_f) %>% 
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>% 
+   ungroup() %>% 
+   group_by(sampletype_f) %>%
+   arrange(color_f, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+color_plot <-  color %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = color_f)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE), color = "black") +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Material Type', y = "Prop. Correct ID's by Spiked Material Type", fill = "Color")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("royalblue", "grey", "forestgreen", "darkorange", "tomato", "ivory", "plum")) +
+   labs(title = "Particles Analyzed via FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+color_plot
+
+#Morphology
+morphology <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f) %>%
+   count(morphology_f) %>% 
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>% 
+   ungroup() %>% 
+   group_by(sampletype_f) %>%
+   arrange(morphology_f, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+morphology_plot <-  morphology %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = morphology_f)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Material Type', y = "Prop. Correct ID's by Spiked Material Type", fill = "Morphology")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = cal_palette("kelp1")) +
+   labs(title = "Particles Analyzed via FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+morphology_plot
+
+```
+
+# Plastic Particles & False Positives
+
+Particles identified as spiked plastic particles or spiked false positives are pooled and analyzed in the following section. Particles that were not chemically identified or labeled as unidentifiable are excluded. 
+
+## Total
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Calculate the proportion of results that had correct vs incorrect chem id results OVERALL, (for all particles including false positives)
+
+# Overall Accuracy
+Results_FTIR_Accuracy <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f) %>% 
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>% 
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE))
+
+# Accuracy for spiked plastics and FPs (qa_fp = NA are results for plastic)
+Accuracy_All_Spike <-  Results_Spike_FTIR %>%
+   group_by(qa_fp, sampletype_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>% 
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(qa_fp, sampletype_f) %>%
+   arrange(qa_fp, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = qa_fp, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~sampletype_f, ncol = 4)+
+   labs(x = 'Material Type', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   scale_x_discrete(labels=c("y" = "False Positive", "n" = "Plastic")) + 
+   labs(title = "Overall Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  mutate(qa_fp = case_when(qa_fp == "y" ~ "Yes",
+                           qa_fp == "n" ~ "No")) %>%
+  select(sampletype_f, qa_fp, correct, n, prop) %>%
+  arrange(sampletype_f, qa_fp) %>% 
+  rename("Matrix" = sampletype_f, "False Positive?" = qa_fp, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Overall Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+# Overall accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, labid) %>%
+   arrange(labid, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~sampletype_f, ncol = 2)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Overall Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+By_Lab
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>% 
+  select(sampletype_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop)  
+  
+kable(b, digits = 2, caption = "Overall Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+## Size Fraction
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Accuracy for spiked plastics and FPs by color
+Accuracy_All_Spike <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f, sizefraction_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, sizefraction_f) %>%
+   arrange(sizefraction_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~sizefraction_f, ncol = 3)+
+   labs(x = 'Size Fraction', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size = 8),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Size Fraction Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  select(sampletype_f, sizefraction_f, correct, n, prop) %>% 
+  arrange(sampletype_f, sizefraction_f) %>% 
+  rename("Matrix" = sampletype_f, "Size Fraction" = sizefraction_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Size Fraction Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+#Histogram of measured particle size and accuracy
+Accuracy_Measured_Size <- Results_Spike_FTIR %>%
+   filter(!length == -88) %>%
+   mutate(length = length*1000) %>% 
+   group_by(sampletype_f, length) %>% 
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>% 
+   ggplot(aes(x = length, fill = correct))+
+   geom_histogram(alpha = 0.5) +
+   facet_wrap(~sampletype_f)+
+   scale_x_log10() +
+   annotation_logticks(sides = "b") +
+   theme_test() +
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Measured Size (Length) Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR.", y = "Number of Particles", x = "Measured Particle Length (µm)", fill = "Chemcial ID Result")
+  
+plot(Accuracy_Measured_Size)
+
+# Size Fraction accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f, sizefraction_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, sizefraction_f, labid) %>%
+   arrange(sizefraction_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+
+#Make a data listing all of the size fractions in the data set
+df2 <- Accuracy_Lab %>% 
+  group_by(sizefraction_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df2))
+
+{ #open loop
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   filter(sizefraction_f == df2$sizefraction_f[[i]]) %>% 
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   facet_wrap(~sampletype_f, ncol = 2)+
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(axis.text=element_text(size=8),
+         axis.title=element_text(size=14,face="bold"),
+         plot.subtitle=element_text(size=14)) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Size Fraction Accuracy, FTIR", 
+        subtitle = paste(df2$sizefraction_f[[i]]), 
+        caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+plot(By_Lab)
+
+} #close loop
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>%
+  select(sampletype_f, sizefraction_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f, sizefraction_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Size Fraction" = sizefraction_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(b, digits = 2, caption = "Size Fraction Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+## Color
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Accuracy for spiked plastics and FPs by color
+Accuracy_All_Spike <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f, color_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, color_f) %>%
+   arrange(color_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~color_f, ncol = 3)+
+   labs(x = 'Color', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size = 8),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Color Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  select(sampletype_f, color_f, correct, n, prop) %>% 
+  arrange(sampletype_f, color_f) %>% 
+  rename("Matrix" = sampletype_f, "Color" = color_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Color Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+# Color accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f, color_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, color_f, labid) %>%
+   arrange(color_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+
+#Make a data listing all of the size fractions in the data set
+df2 <- Accuracy_Lab %>% 
+  group_by(color_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df2))
+
+{ #open loop
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   filter(color_f == df2$color_f[[i]]) %>% 
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   facet_wrap(~sampletype_f, ncol = 2)+
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(axis.text=element_text(size=8),
+         axis.title=element_text(size=14,face="bold"),
+         plot.subtitle=element_text(size=14)) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Color Accuracy, FTIR", 
+        subtitle = paste(df2$color_f[[i]]), 
+        caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+plot(By_Lab)
+
+} #close loop
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>%
+  select(sampletype_f, color_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f, color_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Color" = color_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(b, digits = 2, caption = "Color Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+## Morphology
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Accuracy for spiked plastics and FPs by color
+Accuracy_All_Spike <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f, morphology_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, morphology_f) %>%
+   arrange(morphology_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~morphology_f, ncol = 3)+
+   labs(x = 'Morphology', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size = 8),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Morphology Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  select(sampletype_f, morphology_f, correct, n, prop) %>% 
+  arrange(sampletype_f, morphology_f) %>% 
+  rename("Matrix" = sampletype_f, "Morphology" = morphology_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Morphology Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+# Morphology accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f, morphology_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, morphology_f, labid) %>%
+   arrange(morphology_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+
+#Make a data listing all of the size fractions in the data set
+df2 <- Accuracy_Lab %>% 
+  group_by(morphology_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df2))
+
+{ #open loop
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   filter(morphology_f == df2$morphology_f[[i]]) %>% 
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   facet_wrap(~sampletype_f, ncol = 2)+
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(axis.text=element_text(size=8),
+         axis.title=element_text(size=14,face="bold"),
+         plot.subtitle=element_text(size=14)) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Morphology Accuracy, FTIR", 
+        subtitle = paste(df2$morphology_f[[i]]), 
+        caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+plot(By_Lab)
+
+} #close loop
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>%
+  select(sampletype_f, morphology_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f, morphology_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Morphology" = morphology_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(b, digits = 2, caption = "Morphology Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+## Polymer
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Accuracy for spiked plastics and FPs by color
+Accuracy_All_Spike <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f, polymer_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, polymer_f) %>%
+   arrange(polymer_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~polymer_f, ncol = 3)+
+   labs(x = 'Material Type', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size = 8),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Material Type Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  select(sampletype_f, polymer_f, correct, n, prop) %>% 
+  arrange(sampletype_f, polymer_f) %>% 
+  rename("Matrix" = sampletype_f, "Material Type" = polymer_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Material Type Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+# Material Type accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR %>%
+   group_by(sampletype_f, polymer_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, polymer_f, labid) %>%
+   arrange(polymer_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+
+#Make a data listing all of the size fractions in the data set
+df2 <- Accuracy_Lab %>% 
+  group_by(polymer_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df2))
+
+{ #open loop
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   filter(polymer_f == df2$polymer_f[[i]]) %>% 
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   facet_wrap(~sampletype_f, ncol = 2)+
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(axis.text=element_text(size=8),
+         axis.title=element_text(size=14,face="bold"),
+         plot.subtitle=element_text(size=14)) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Material Type Accuracy, FTIR", 
+        subtitle = paste(df2$polymer_f[[i]]), 
+        caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+plot(By_Lab)
+
+} #close loop
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>%
+  select(sampletype_f, polymer_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f, polymer_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Material Type" = polymer_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(b, digits = 2, caption = "Material Type Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+# Plastic Particles Only
+
+Only particles that were identified as spiked plastic particles are analyzed in the following section. 
+
+## Total
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Calculate the proportion of results that had correct vs incorrect chem id results OVERALL, (for all particles including false positives)
+
+# Overall Accuracy
+Results_FTIR_Accuracy <-  Results_Spike_FTIR_Plastic %>%
+   group_by(sampletype_f) %>% 
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>% 
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE))
+
+# Accuracy for spiked plastics and FPs (qa_fp = NA are results for plastic)
+Accuracy_All_Spike <-  Results_Spike_FTIR_Plastic %>%
+   group_by(qa_fp, sampletype_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>% 
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(qa_fp, sampletype_f) %>%
+   arrange(qa_fp, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = qa_fp, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~sampletype_f, ncol = 4)+
+   labs(x = 'Material Type', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   scale_x_discrete(labels=c("y" = "False Positive", "n" = "Plastic")) + 
+   labs(title = "Overall Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  mutate(qa_fp = case_when(qa_fp == "y" ~ "Yes",
+                           qa_fp == "n" ~ "No")) %>%
+  select(sampletype_f, qa_fp, correct, n, prop) %>%
+  arrange(sampletype_f, qa_fp) %>% 
+  rename("Matrix" = sampletype_f, "False Positive?" = qa_fp, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Overall Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+# Overall accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR_Plastic %>%
+   group_by(sampletype_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, labid) %>%
+   arrange(labid, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~sampletype_f, ncol = 2)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Overall Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+By_Lab
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>% 
+  select(sampletype_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop)  
+  
+kable(b, digits = 2, caption = "Overall Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+## Size Fraction
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Accuracy for spiked plastics and FPs by color
+Accuracy_All_Spike <-  Results_Spike_FTIR_Plastic %>%
+   group_by(sampletype_f, sizefraction_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, sizefraction_f) %>%
+   arrange(sizefraction_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~sizefraction_f, ncol = 3)+
+   labs(x = 'Size Fraction', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size = 8),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Size Fraction Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  select(sampletype_f, sizefraction_f, correct, n, prop) %>% 
+  arrange(sampletype_f, sizefraction_f) %>% 
+  rename("Matrix" = sampletype_f, "Size Fraction" = sizefraction_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Size Fraction Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+#Histogram of measured particle size and accuracy
+Accuracy_Measured_Size <- Results_Spike_FTIR_Plastic %>%
+   filter(!length == -88) %>%
+   mutate(length = length*1000) %>% 
+   group_by(sampletype_f, length) %>% 
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>% 
+   ggplot(aes(x = length, fill = correct))+
+   geom_histogram(alpha = 0.5) +
+   facet_wrap(~sampletype_f)+
+   scale_x_log10() +
+   annotation_logticks(sides = "b") +
+   theme_test() +
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Measured Size (Length) Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR.", y = "Number of Particles", x = "Measured Particle Length (µm)", fill = "Chemcial ID Result")
+  
+plot(Accuracy_Measured_Size)
+
+# Size Fraction accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR_Plastic %>%
+   group_by(sampletype_f, sizefraction_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, sizefraction_f, labid) %>%
+   arrange(sizefraction_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+
+#Make a data listing all of the size fractions in the data set
+df2 <- Accuracy_Lab %>% 
+  group_by(sizefraction_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df2))
+
+{ #open loop
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   filter(sizefraction_f == df2$sizefraction_f[[i]]) %>% 
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   facet_wrap(~sampletype_f, ncol = 2)+
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(axis.text=element_text(size=8),
+         axis.title=element_text(size=14,face="bold"),
+         plot.subtitle=element_text(size=14)) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Size Fraction Accuracy, FTIR", 
+        subtitle = paste(df2$sizefraction_f[[i]]), 
+        caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+plot(By_Lab)
+
+} #close loop
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>%
+  select(sampletype_f, sizefraction_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f, sizefraction_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Size Fraction" = sizefraction_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(b, digits = 2, caption = "Size Fraction Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+## Color
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Accuracy for spiked plastics and FPs by color
+Accuracy_All_Spike <-  Results_Spike_FTIR_Plastic %>%
+   group_by(sampletype_f, color_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, color_f) %>%
+   arrange(color_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~color_f, ncol = 3)+
+   labs(x = 'Color', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size = 8),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Color Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  select(sampletype_f, color_f, correct, n, prop) %>% 
+  arrange(sampletype_f, color_f) %>% 
+  rename("Matrix" = sampletype_f, "Color" = color_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Color Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+# Color accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR_Plastic %>%
+   group_by(sampletype_f, color_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, color_f, labid) %>%
+   arrange(color_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+
+#Make a data listing all of the size fractions in the data set
+df2 <- Accuracy_Lab %>% 
+  group_by(color_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df2))
+
+{ #open loop
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   filter(color_f == df2$color_f[[i]]) %>% 
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   facet_wrap(~sampletype_f, ncol = 2)+
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(axis.text=element_text(size=8),
+         axis.title=element_text(size=14,face="bold"),
+         plot.subtitle=element_text(size=14)) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Color Accuracy, FTIR", 
+        subtitle = paste(df2$color_f[[i]]), 
+        caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+plot(By_Lab)
+
+} #close loop
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>%
+  select(sampletype_f, color_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f, color_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Color" = color_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(b, digits = 2, caption = "Color Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+## Morphology
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Accuracy for spiked plastics and FPs by color
+Accuracy_All_Spike <-  Results_Spike_FTIR_Plastic %>%
+   group_by(sampletype_f, morphology_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, morphology_f) %>%
+   arrange(morphology_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~morphology_f, ncol = 3)+
+   labs(x = 'Morphology', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size = 8),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Morphology Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  select(sampletype_f, morphology_f, correct, n, prop) %>% 
+  arrange(sampletype_f, morphology_f) %>% 
+  rename("Matrix" = sampletype_f, "Morphology" = morphology_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Morphology Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+# Morphology accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR_Plastic %>%
+   group_by(sampletype_f, morphology_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, morphology_f, labid) %>%
+   arrange(morphology_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+
+#Make a data listing all of the size fractions in the data set
+df2 <- Accuracy_Lab %>% 
+  group_by(morphology_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df2))
+
+{ #open loop
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   filter(morphology_f == df2$morphology_f[[i]]) %>% 
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   facet_wrap(~sampletype_f, ncol = 2)+
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(axis.text=element_text(size=8),
+         axis.title=element_text(size=14,face="bold"),
+         plot.subtitle=element_text(size=14)) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Morphology Accuracy, FTIR", 
+        subtitle = paste(df2$morphology_f[[i]]), 
+        caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+plot(By_Lab)
+
+} #close loop
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>%
+  select(sampletype_f, morphology_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f, morphology_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Morphology" = morphology_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(b, digits = 2, caption = "Morphology Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+## Polymer
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Accuracy for spiked plastics and FPs by color
+Accuracy_All_Spike <-  Results_Spike_FTIR_Plastic %>%
+   group_by(sampletype_f, polymer_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, polymer_f) %>%
+   arrange(polymer_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~polymer_f, ncol = 3)+
+   labs(x = 'Material Type', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size = 8),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Material Type Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  select(sampletype_f, polymer_f, correct, n, prop) %>% 
+  arrange(sampletype_f, polymer_f) %>% 
+  rename("Matrix" = sampletype_f, "Material Type" = polymer_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Material Type Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+# Material Type accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR_Plastic %>%
+   group_by(sampletype_f, polymer_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, polymer_f, labid) %>%
+   arrange(polymer_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+
+#Make a data listing all of the size fractions in the data set
+df2 <- Accuracy_Lab %>% 
+  group_by(polymer_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df2))
+
+{ #open loop
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   filter(polymer_f == df2$polymer_f[[i]]) %>% 
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   facet_wrap(~sampletype_f, ncol = 2)+
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(axis.text=element_text(size=8),
+         axis.title=element_text(size=14,face="bold"),
+         plot.subtitle=element_text(size=14)) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Material Type Accuracy, FTIR", 
+        subtitle = paste(df2$polymer_f[[i]]), 
+        caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+plot(By_Lab)
+
+} #close loop
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>%
+  select(sampletype_f, polymer_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f, polymer_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Material Type" = polymer_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(b, digits = 2, caption = "Material Type Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+# False Positives Only
+
+Only particles that were identified as spiked false positive particles are analyzed in the following section. 
+
+## Total
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Calculate the proportion of results that had correct vs incorrect chem id results OVERALL, (for all particles including false positives)
+
+# Overall Accuracy
+Results_FTIR_Accuracy <-  Results_Spike_FTIR_FP %>%
+   group_by(sampletype_f) %>% 
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>% 
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE))
+
+# Accuracy for spiked plastics and FPs (qa_fp = NA are results for plastic)
+Accuracy_All_Spike <-  Results_Spike_FTIR_FP %>%
+   group_by(qa_fp, sampletype_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>% 
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(qa_fp, sampletype_f) %>%
+   arrange(qa_fp, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = qa_fp, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~sampletype_f, ncol = 4)+
+   labs(x = 'Material Type', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   scale_x_discrete(labels=c("y" = "False Positive", "n" = "Plastic")) + 
+   labs(title = "Overall Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  mutate(qa_fp = case_when(qa_fp == "y" ~ "Yes",
+                           qa_fp == "n" ~ "No")) %>%
+  select(sampletype_f, qa_fp, correct, n, prop) %>%
+  arrange(sampletype_f, qa_fp) %>% 
+  rename("Matrix" = sampletype_f, "False Positive?" = qa_fp, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Overall Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+# Overall accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR_FP %>%
+   group_by(sampletype_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, labid) %>%
+   arrange(labid, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~sampletype_f, ncol = 2)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Overall Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+By_Lab
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>% 
+  select(sampletype_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop)  
+  
+kable(b, digits = 2, caption = "Overall Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+## Size Fraction
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Accuracy for spiked plastics and FPs by color
+Accuracy_All_Spike <-  Results_Spike_FTIR_FP %>%
+   group_by(sampletype_f, sizefraction_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, sizefraction_f) %>%
+   arrange(sizefraction_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~sizefraction_f, ncol = 3)+
+   labs(x = 'Size Fraction', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size = 8),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Size Fraction Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  select(sampletype_f, sizefraction_f, correct, n, prop) %>% 
+  arrange(sampletype_f, sizefraction_f) %>% 
+  rename("Matrix" = sampletype_f, "Size Fraction" = sizefraction_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Size Fraction Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+#Histogram of measured particle size and accuracy
+Accuracy_Measured_Size <- Results_Spike_FTIR_FP %>%
+   filter(!length == -88) %>%
+   mutate(length = length*1000) %>% 
+   group_by(sampletype_f, length) %>% 
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>% 
+   ggplot(aes(x = length, fill = correct))+
+   geom_histogram(alpha = 0.5) +
+   facet_wrap(~sampletype_f)+
+   scale_x_log10() +
+   annotation_logticks(sides = "b") +
+   theme_test() +
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Measured Size (Length) Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR.", y = "Number of Particles", x = "Measured Particle Length (µm)", fill = "Chemcial ID Result")
+  
+plot(Accuracy_Measured_Size)
+
+# Size Fraction accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR_FP %>%
+   group_by(sampletype_f, sizefraction_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, sizefraction_f, labid) %>%
+   arrange(sizefraction_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+
+#Make a data listing all of the size fractions in the data set
+df2 <- Accuracy_Lab %>% 
+  group_by(sizefraction_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df2))
+
+{ #open loop
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   filter(sizefraction_f == df2$sizefraction_f[[i]]) %>% 
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   facet_wrap(~sampletype_f, ncol = 2)+
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(axis.text=element_text(size=8),
+         axis.title=element_text(size=14,face="bold"),
+         plot.subtitle=element_text(size=14)) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Size Fraction Accuracy, FTIR", 
+        subtitle = paste(df2$sizefraction_f[[i]]), 
+        caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+plot(By_Lab)
+
+} #close loop
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>%
+  select(sampletype_f, sizefraction_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f, sizefraction_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Size Fraction" = sizefraction_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(b, digits = 2, caption = "Size Fraction Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+## Color
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Accuracy for spiked plastics and FPs by color
+Accuracy_All_Spike <-  Results_Spike_FTIR_FP %>%
+   group_by(sampletype_f, color_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, color_f) %>%
+   arrange(color_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~color_f, ncol = 3)+
+   labs(x = 'Color', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size = 8),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Color Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  select(sampletype_f, color_f, correct, n, prop) %>% 
+  arrange(sampletype_f, color_f) %>% 
+  rename("Matrix" = sampletype_f, "Color" = color_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Color Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+# Color accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR_FP %>%
+   group_by(sampletype_f, color_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, color_f, labid) %>%
+   arrange(color_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+
+#Make a data listing all of the size fractions in the data set
+df2 <- Accuracy_Lab %>% 
+  group_by(color_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df2))
+
+{ #open loop
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   filter(color_f == df2$color_f[[i]]) %>% 
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   facet_wrap(~sampletype_f, ncol = 2)+
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(axis.text=element_text(size=8),
+         axis.title=element_text(size=14,face="bold"),
+         plot.subtitle=element_text(size=14)) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Color Accuracy, FTIR", 
+        subtitle = paste(df2$color_f[[i]]), 
+        caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+plot(By_Lab)
+
+} #close loop
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>%
+  select(sampletype_f, color_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f, color_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Color" = color_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(b, digits = 2, caption = "Color Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+## Morphology
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Accuracy for spiked plastics and FPs by color
+Accuracy_All_Spike <-  Results_Spike_FTIR_FP %>%
+   group_by(sampletype_f, morphology_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, morphology_f) %>%
+   arrange(morphology_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~morphology_f, ncol = 3)+
+   labs(x = 'Morphology', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size = 8),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Morphology Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  select(sampletype_f, morphology_f, correct, n, prop) %>% 
+  arrange(sampletype_f, morphology_f) %>% 
+  rename("Matrix" = sampletype_f, "Morphology" = morphology_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Morphology Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+# Morphology accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR_FP %>%
+   group_by(sampletype_f, morphology_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, morphology_f, labid) %>%
+   arrange(morphology_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+
+#Make a data listing all of the size fractions in the data set
+df2 <- Accuracy_Lab %>% 
+  group_by(morphology_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df2))
+
+{ #open loop
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   filter(morphology_f == df2$morphology_f[[i]]) %>% 
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   facet_wrap(~sampletype_f, ncol = 2)+
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(axis.text=element_text(size=8),
+         axis.title=element_text(size=14,face="bold"),
+         plot.subtitle=element_text(size=14)) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Morphology Accuracy, FTIR", 
+        subtitle = paste(df2$morphology_f[[i]]), 
+        caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+plot(By_Lab)
+
+} #close loop
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>%
+  select(sampletype_f, morphology_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f, morphology_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Morphology" = morphology_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(b, digits = 2, caption = "Morphology Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+## Polymer
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 11}
+
+# Accuracy for spiked plastics and FPs by color
+Accuracy_All_Spike <-  Results_Spike_FTIR_FP %>%
+   group_by(sampletype_f, polymer_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, polymer_f) %>%
+   arrange(polymer_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Plot Accuracy results for both plastic and false positives
+FTIR_Accuracy_Spike <-  Accuracy_All_Spike %>%
+   ggplot(aes(x = sampletype_f, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~polymer_f, ncol = 3)+
+   labs(x = 'Material Type', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(axis.text=element_text(size = 8),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Material Type Accuracy, FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+FTIR_Accuracy_Spike
+
+# Table for accuracy results for both plastic and false positives
+a <- Accuracy_All_Spike %>% 
+  select(sampletype_f, polymer_f, correct, n, prop) %>% 
+  arrange(sampletype_f, polymer_f) %>% 
+  rename("Matrix" = sampletype_f, "Material Type" = polymer_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(a, digits = 2, caption = "Material Type Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+# Material Type accuracy per lab
+Accuracy_Lab <-  Results_Spike_FTIR_FP %>%
+   group_by(sampletype_f, polymer_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                             correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, polymer_f, labid) %>%
+   arrange(polymer_f, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+
+#Make a data listing all of the size fractions in the data set
+df2 <- Accuracy_Lab %>% 
+  group_by(polymer_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df2))
+
+{ #open loop
+
+# Make a figure for overall accuracy per lab
+By_Lab <-  Accuracy_Lab %>%
+   filter(polymer_f == df2$polymer_f[[i]]) %>% 
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   facet_wrap(~sampletype_f, ncol = 2)+
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(axis.text=element_text(size=8),
+         axis.title=element_text(size=14,face="bold"),
+         plot.subtitle=element_text(size=14)) +
+   scale_fill_manual(values = c("darkmagenta", "orchid")) +
+   labs(title = "Material Type Accuracy, FTIR", 
+        subtitle = paste(df2$polymer_f[[i]]), 
+        caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
+
+plot(By_Lab)
+
+} #close loop
+
+# Table for accuracy results for both plastic and false positives per lab
+b <- Accuracy_Lab %>%
+  select(sampletype_f, polymer_f, labid, correct, n, prop) %>% 
+  arrange(sampletype_f, polymer_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Material Type" = polymer_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop) 
+  
+kable(b, digits = 2, caption = "Material Type Accuracy, FTIR") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+# Specific Particle Types
+
+The accuracy for spiked particle types of unique combinations of size fraction, color, morphology, and material type are analyzed in the following section. 
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, results = 'asis', fig.height= 7, fig.width= 11}
+
+#Make a data frame for unique particle types found in the data set
+df <- Results_Spike_FTIR %>% 
+  group_by(sizefraction_f, color_f, morphology_f, polymer_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df))
+  
+{ #open loop
+
+# Accuracy for spiked plastics and FPs by color
+a <-  Results_Spike_FTIR %>%
+   filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
+   filter(color_f == df$color_f[[i]]) %>% 
+   filter(morphology_f == df$morphology_f[[i]]) %>%
+   filter(polymer_f == df$polymer_f[[i]]) %>%
+   group_by(sampletype_f, labid) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                              correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(sampletype_f, labid) %>%
+   arrange(labid, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# Make a figure for overall accuracy per lab
+plot <-  a %>%
+   ggplot(aes(x = labid, y = prop, fill = correct)) + 
+   theme_test() +
+   geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+   geom_text(aes(y = label_y, label = n), size = 4)+
+   facet_wrap(~sampletype_f)+
+   labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+   ylim(0,1)+
+   theme(axis.text=element_text(size=15),
+         axis.title=element_text(size=14,face="bold")) +
+   scale_fill_manual(values = c("orchid", "darkmagenta")) +
+   labs(title = "Accuracy, FTIR", 
+        subtitle = paste(df$sizefraction_f[[i]], df$color_f[[i]], df$morphology_f[[i]], df$polymer_f[[i]]), 
+        caption = "Data labels represent the number of particles analyzed.")
+
+plot(plot)
+
+# Table for accuracy results for both plastic and false positives per lab
+table <- a %>% 
+  select(sampletype_f, labid, correct, n, prop) %>%
+  arrange(sampletype_f) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop)
+  
+print(kable(table, digits = 2, caption = paste(df$sizefraction_f[[i]], df$color_f[[i]], df$morphology_f[[i]], df$polymer_f[[i]])) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px"))
+  #Line break to ensure table renders properly in markdown
+  cat('\n')
+  
+} #close loop
+  
+```
+
+# Incorrect ID's or Undentifiable Particles
+
+Particles that were incorrectly identified or labeled as unidentifiable are analyzed below. 
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, results = 'asis'}
+
+Incorrect_IDs <- Results_Clean %>%
+  #Filter results to only include spike particles (yes)
+  filter(qa_particle == "y") %>%
+  #Select only data for FTIR
+  filter(ftir == "Yes") %>% 
+  #Drop particles that were correctly ID'ed
+  filter(qa_correctchemid_ftir %in% c("n", "u"))
+
+#Make a data frame for unique particle types found in the data set
+df <- Incorrect_IDs %>% 
+  group_by(sizefraction_f, color_f, morphology_f, polymer_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df))
+  
+{ #open loop
+
+# Accuracy for spiked plastics and FPs by color
+a <-  Incorrect_IDs %>%
+   filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
+   filter(color_f == df$color_f[[i]]) %>% 
+   filter(morphology_f == df$morphology_f[[i]]) %>%
+   filter(polymer_f == df$polymer_f[[i]]) %>%
+   group_by(sampletype_f, labid, ftir_chemicalid, polymer_f) %>%
+   count(qa_correctchemid_ftir == "y") %>%
+   mutate(prop = prop.table(n)) %>% 
+   as.data.frame() %>%   
+   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
+   replace_na(list(correct = FALSE)) %>%
+   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
+                              correct == "FALSE" ~ "Incorrect")) %>%
+   ungroup() %>% 
+   group_by(labid) %>% 
+   arrange(labid, correct, desc(prop)) %>%
+   mutate(label_y = cumsum(prop) - 0.5*prop)
+
+# # Make a figure for overall accuracy per lab
+# plot <-  a %>%
+#    ggplot(aes(x = labid, y = prop, fill = correct)) + 
+#    theme_test() +
+#    geom_col(stat = 'identity', alpha = 2/3, position = position_fill(reverse = TRUE)) +
+#    geom_text(aes(y = label_y, label = n), size = 5)+
+#    labs(x = 'Lab', y = "Prop. Correct ID's by Spiked Material Type", fill = "Chemical ID Result")+
+#    ylim(0,1)+
+#    theme(axis.text=element_text(size=15),
+#          axis.title=element_text(size=14,face="bold")) +
+#    scale_fill_manual(values = c("orchid", "darkmagenta")) +
+#    labs(title = "Accuracy, FTIR", 
+#         subtitle = paste(df$sizefraction_f[[i]], df$color_f[[i]], df$morphology_f[[i]], df$polymer_f[[i]]), 
+#         caption = "Data labels represent the number of particles analyzed.")
+# 
+# plot(plot)
+
+# Table for accuracy results for both plastic and false positives per lab
+table <- a %>%
+  select(sampletype_f, labid, ftir_chemicalid, polymer_f, correct, n, prop) %>% 
+  rename("Matrix" = sampletype_f, "Lab ID" = labid, "Reported Chemical ID" = ftir_chemicalid, "True Chemical ID" = polymer_f, "Chemical ID Result" = correct, "Number of Particles" = n, "Proportion" = prop)
+  
+print(kable(table, digits = 2, caption = paste(df$sizefraction_f[[i]], df$color_f[[i]], df$morphology_f[[i]], df$polymer_f[[i]])) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px"))
+  #Line break to ensure table renders properly in markdown
+  cat('\n')
+  
+} #close loop
+
+```  
+  
+End of Analysis. 
+

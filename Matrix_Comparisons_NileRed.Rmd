@@ -1,0 +1,2353 @@
+---
+title: "Microplastics Intercalibration Study Data Analysis: Matrix Comparisons, Nile Red"
+author: "Southern California Coastal Water Research Project, University of Toronto & State Water Resources Control Board of California"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: 
+    toc: true
+    toc_depth: 4
+    number_sections: true
+    toc_float: true
+---
+
+![](./www/logobanner.png)
+
+```{r Packages, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#Load packages
+library(tidyverse)#A ton of useful functions
+library(scales)#Needed for that label wrap
+library(calecopal)#Needed for color scales
+library(gridExtra)#Needed to combine plots into one figure
+library(knitr) #Needed to display table
+library(cowplot) #Needed to combine plots
+library(kableExtra) #Needed for table features (i.e., scroll_box)
+library(forcats) #Needed for reordering axes
+
+```
+
+```{r echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+Full_DB <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_results_master", guess_max = 10000)
+
+Full_DB$labid <- gsub("Lab","",as.character(Full_DB$labid))
+Full_DB$sampleid <- gsub("Lab","",as.character(Full_DB$sampleid))
+Full_DB$particleid <- gsub("Lab","",as.character(Full_DB$particleid))
+Full_DB$photoid <- gsub("Lab","",as.character(Full_DB$photoid))
+
+Results <- Full_DB %>%
+  #Removed lab D - incomparable with other data - deviation from methods
+  filter(!(labid == "D"&sampletype == "CW")) %>%
+  #Removed pygcms data data
+  filter(!(labid == "T"&sampletype == "CW")) %>%
+  filter(!(labid == "F"&sampletype == "CW")) %>%
+  #Removed second set from Lab N - 2nd set of samples processed
+  filter(!(labid == "N"&sampletype == "CW"&(grepl("5|6|7|8", sampleid)))) %>%   
+  rename("microscopy" = stereoscope) %>% 
+  rename("nilered" = fluorescencestaining)
+
+Lab_Info <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_labinformation", guess_max = 100000) #Import .csv file containing all lab information for other matrices
+
+#Remove "Lab" from relevant columns
+Lab_Info$labid <- gsub("Lab","",as.character(Lab_Info$labid))
+
+#Select data relating to expertise for visual microscopy
+Expertise <- Lab_Info %>%
+  select(labid, matrix, expertiseextraction, expertisevisualmicroscopy, expertisenilered, expertiseftir, expertiseraman, expertisepy_gcms)
+
+Results <- Results %>% 
+   #Join expertise data to results data frame
+   left_join(Expertise, by = c("labid" = "labid", "sampletype" = "matrix"))  
+Reference <- read_csv('https://mpchecker.sccwrp.org/checker/export?table=sample_spiking_info', guess_max = 100000) #Import .csv file containing all reference spiking information for all matrices including clean water
+
+```
+
+```{r Results Tidying, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+Results_Clean <- Results %>%
+  #Create factor for nominal size fractions
+  mutate(sizefraction = gsub("um","µm",as.character(sizefraction))) %>% 
+  mutate(sizefraction_f = as.factor(sizefraction)) %>%
+  #Create factor for colors
+  mutate(color_f = as.factor(color)) %>%
+  #Create factor for morphology
+  mutate(morphology_f = as.factor(morphology)) %>% 
+  #Create factor for nile red
+  mutate(nilered_f = as.factor(nilered)) %>% 
+  #Rename and create factor for sample type
+  mutate(sampletype = case_when(
+    sampletype == "CW" ~ "Clean Water",
+    sampletype == "FT" ~ "Fish Tissue",
+    sampletype == "SD" ~ "Sediment",
+    sampletype == "DW" ~ "Dirty Water")) %>% 
+  mutate(sampletype_f = as.factor(sampletype)) %>%
+  #Create a new column to indicate which samples are blanks - all sampleids with a 4 or 8
+  mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>%   
+  #Exclude augmentation data
+  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & sampletype %in% c("Sediment"))) %>% 
+  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & sampletype %in% c("Fish Tissue")))
+
+```
+
+```{r Microscopy Tidying, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+# Results are selected to only include particles that were identified via nile red. Counts for unique samples and particle IDs for total, size fraction, color and morphology are calculated and a new column is created for each.
+
+#Calculate the number of particles for each characteristic and combination 
+
+Results_Clean_NileRed <- Results_Clean %>%
+  #Select particles analyzed by nile red
+  filter(nilered_f == "Yes") %>% 
+  group_by(sampletype_f, sampleid) %>% 
+  #Total particles per sample
+  mutate(total = n_distinct(sampleid, particleid)) %>% 
+  ungroup() %>% 
+  #Total particles by size fraction
+  group_by(sampletype_f, sampleid, sizefraction_f) %>% 
+  mutate(total_sizefraction = n_distinct(sampleid, particleid)) %>%  
+  ungroup() %>% 
+  #Total particles by morphology
+  group_by(sampletype_f, sampleid, morphology_f) %>% 
+  mutate(total_morphology = n_distinct(sampleid, particleid)) %>% 
+  ungroup() %>% 
+  #Total particles by morphology within size fraction
+  group_by(sampletype_f, sampleid, sizefraction_f, morphology_f) %>% 
+  mutate(total_morphology_sizefraction = n_distinct(sampleid, particleid)) %>% 
+  ungroup() %>% 
+  #Select and rename relevant type of expertise to work for fields below
+  rename("expertise" = expertisenilered) %>% 
+  replace_na(list(expertise = "Not Reported"))
+
+```
+
+```{r Reference Data Tidying, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#Particle counts within each sample are totaled for the following categories: total, size fraction, morphology, color, and polymer. A new column is created for each categories. Values are sample specific. 
+
+Reference_Clean <- Reference %>%
+  #Remove small size fraction spiking data from lab R that isn't in other samples
+  filter(!(labid == "R" & sizefraction == "20-Jan" & sampletype == "DW")) %>% 
+  filter(!(labid == "R" & sizefraction == "20-212" & sampletype == "DW")) %>% 
+  
+  #Drop spiking values of 0 or NAs
+  filter(!averagenumber == 0) %>% 
+  
+  #Create factor for color
+  mutate(color = case_when(
+    color == "white" ~ "White",
+    color == "orange" ~ "Orange",
+    color == "green" ~ "Green",
+    color == "red" ~ "Red",
+    color == "blue" ~ "Blue",
+    color == "clear" ~ "Clear")) %>% 
+  mutate(color_f = as.factor(color)) %>% 
+  #Create factor for shape
+  mutate(morphology = case_when(
+    morphology == "fragment" ~ "Fragment",
+    morphology == "sphere" ~ "Sphere",
+    morphology == "fiber" ~ "Fiber")) %>%  
+    mutate(morphology_f = as.factor(morphology)) %>% 
+  #Create factor for size fraction
+   mutate(sizefraction = case_when(
+    sizefraction == "20-Jan" ~ "1-20 µm",
+    sizefraction == "1-20" ~ "1-20 µm",
+    sizefraction == "20-212" ~ "20-212 µm",
+    sizefraction == "212-500" ~ "212-500 µm",
+    sizefraction == ">500" ~ ">500 µm")) %>%   
+  mutate(sizefraction_f = as.factor(sizefraction)) %>%
+  mutate(plastic_f = as.factor(plastic)) %>%
+  mutate(sampletype = case_when(
+    sampletype == "CW" ~ "Clean Water",
+    sampletype == "FT" ~ "Fish Tissue",
+    sampletype == "SD" ~ "Sediment",
+    sampletype == "DW" ~ "Dirty Water")) %>% 
+  mutate(sampletype_f = as.factor(sampletype)) %>%
+  
+#All of the following calculations distinguish between plastic and non-plastic spikes
+  #Total particle spike per sample
+  group_by(sampletype_f, sampleid, plastic_f) %>% 
+  mutate(total_spike = sum(averagenumber, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  #Total particle spike per size fraction
+  group_by(sampletype_f, sampleid, plastic_f, sizefraction_f) %>% 
+  mutate(total_spike_sizefraction = sum(averagenumber, na.rm = TRUE)) %>% 
+  ungroup() %>%
+  #Total particle spike per morphology
+  group_by(sampletype_f, sampleid, plastic_f, morphology_f) %>% 
+  mutate(total_spike_morphology = sum(averagenumber, na.rm = TRUE)) %>% 
+  ungroup()%>%
+  #Total particle spike per size fraction and morphology
+  group_by(sampletype_f, sampleid, plastic_f, sizefraction_f, morphology_f) %>% 
+  mutate(total_spike_morphology_sizefraction = sum(averagenumber, na.rm = TRUE)) %>% 
+  ungroup() 
+
+```
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE}
+
+#Join relevant columns of reference data frame and results to compare expected counts to actual counts for nile red only data. Recovery for each category is calculated on a sample-specific basis. A new recovery column is created for each category. 
+
+#Total
+totalspikecol <- Reference_Clean %>% #Select total_spike column from reference
+  distinct(sampletype_f, sampleid, plastic_f, total_spike)
+  
+Join_NileRed_Total <- inner_join(Results_Clean_NileRed, totalspikecol, by = c("sampleid", "sampletype_f")) %>% #Join total_spike column to nile red results data frame
+    mutate(total_pct_recovery = ((total/total_spike)*100)) %>%  #Create a new column for the total recovery of nile red only results
+    group_by(labid, sampletype_f, sampleid, plastic_f, nilered_f, total, total_spike, total_pct_recovery, expertise) %>% 
+    summarise()
+    
+#Size Fraction
+sizefractionspikecol <- Reference_Clean %>% 
+  distinct(sampletype_f, sampleid, plastic_f, sizefraction_f, total_spike_sizefraction)
+  
+sizefractionsumresults <- Results_Clean_NileRed %>% 
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
+  drop_na(sizefraction_f) %>% #Drop particles not assigned to a size fraction
+  group_by(labid, sampletype_f, sampleid, nilered_f, sizefraction_f, total_sizefraction, expertise) %>% 
+  summarise()
+
+Join_NileRed_SizeFraction <- inner_join(sizefractionsumresults, sizefractionspikecol, by = c("sampleid" = "sampleid", "sizefraction_f" = "sizefraction_f", "sampletype_f")) %>%  
+    mutate(sizefrac_pct_recovery = ((total_sizefraction/total_spike_sizefraction)*100)) 
+
+#Morphology
+morphologyspikecol <- Reference_Clean %>% 
+  distinct(sampletype_f, sampleid, plastic_f, morphology_f, total_spike_morphology)
+  
+morphologysumresults <- Results_Clean_NileRed %>% 
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
+  group_by(labid, sampletype_f, sampleid, nilered_f, morphology_f, total_morphology, expertise) %>% 
+  summarise()
+
+Join_NileRed_Morphology <- inner_join(morphologysumresults, morphologyspikecol, by = c("sampleid" = "sampleid", "morphology_f" = "morphology_f", "sampletype_f")) %>%  
+    mutate(morphology_pct_recovery = ((total_morphology/total_spike_morphology)*100))
+
+#Combination - Size Fraction and Morphology 
+
+ combospikecol <- Reference_Clean %>%
+   distinct(sampletype_f, sampleid, plastic_f, sizefraction_f, morphology_f, total_spike_morphology_sizefraction)
+
+ combosumresults <- Results_Clean_NileRed %>%
+   filter(!grepl("4", sampleid)) %>%
+   filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
+   drop_na(sizefraction_f) %>% #Drop particles not assigned to a size fraction
+   group_by(labid, sampletype_f, sampleid, nilered_f, sizefraction_f, morphology_f, total_morphology_sizefraction, expertise) %>%
+   summarise()
+
+ Join_NileRed_Combo <- inner_join(combosumresults, combospikecol, by = c("sampleid" = "sampleid", "morphology_f" = "morphology_f", "sizefraction_f" = "sizefraction_f", "sampletype_f")) %>%
+   mutate(morphology_sizefraction_pct_recovery = ((total_morphology_sizefraction/total_spike_morphology_sizefraction)*100))
+
+```
+
+# Spiking Summary
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE}
+
+#total spike
+a <- Reference_Clean %>%
+  distinct(sampletype_f, sampleid, plastic_f, total_spike) %>% 
+  group_by(sampletype_f, plastic_f) %>% 
+  mutate(total_spike_mean = mean(total_spike)) %>% 
+  mutate(total_spike_sd = sd(total_spike)) %>%
+  ungroup() %>% 
+  group_by(sampletype_f, plastic_f, total_spike_mean, total_spike_sd) %>% 
+  summarise() %>%
+  rename("Matrix" = sampletype_f, "Plastic?" = plastic_f, "Number of Spiked Particles" = total_spike_mean, "Standard Deviation" = total_spike_sd)
+
+kable(a, digits = 2, caption = "Average Number of Spiked Particles per Sample") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px") 
+
+#size fraction
+b <- Reference_Clean %>%
+  distinct(sampletype_f, sampleid, plastic_f, sizefraction_f, total_spike_sizefraction) %>% 
+  group_by(sampletype_f, plastic_f, sizefraction_f) %>% 
+  mutate(total_spike_mean = mean(total_spike_sizefraction)) %>% 
+  mutate(total_spike_sd = sd(total_spike_sizefraction)) %>%
+  ungroup() %>% 
+  group_by(sampletype_f, plastic_f, sizefraction_f, total_spike_mean, total_spike_sd) %>% 
+  summarise() %>%
+  rename("Matrix" = sampletype_f, "Plastic?" = plastic_f, "Size Fraction" = sizefraction_f, "Number of Spiked Particles" = total_spike_mean,
+         "Standard Deviation" = total_spike_sd)
+
+kable(b, digits = 2, caption = "Average Number of Spiked Particles per Sample by Size Fraction") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px") 
+
+#morphology
+d <- Reference_Clean %>%
+  distinct(sampletype_f, sampleid, plastic_f, morphology_f, total_spike_morphology) %>% 
+  group_by(sampletype_f, plastic_f, morphology_f) %>% 
+  mutate(total_spike_mean = mean(total_spike_morphology)) %>%
+  mutate(total_spike_sd = sd(total_spike_morphology)) %>%
+  ungroup() %>% 
+  group_by(sampletype_f, plastic_f, morphology_f, total_spike_mean, total_spike_sd) %>% 
+  summarise() %>%
+  rename("Matrix" = sampletype_f, "Plastic?" = plastic_f, "Morphology" = morphology_f, "Number of Spiked Particles" = total_spike_mean, 
+         "Standard Deviation" = total_spike_sd)
+
+kable(d, digits = 2, caption = "Average Number of Spiked Particles per Sample by Morphology") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px") 
+
+#morphology within size fraction
+e <- Reference_Clean %>%
+  distinct(sampletype_f, sampleid, plastic_f, morphology_f, sizefraction_f, total_spike_morphology_sizefraction) %>% 
+  group_by(sampletype_f, plastic_f, morphology_f, sizefraction_f) %>% 
+  mutate(total_spike_mean = mean(total_spike_morphology_sizefraction)) %>% 
+  mutate(total_spike_sd = sd(total_spike_morphology_sizefraction)) %>%
+  ungroup() %>% 
+  group_by(sampletype_f, plastic_f, morphology_f, sizefraction_f, total_spike_mean, total_spike_sd) %>% 
+  summarise() %>%
+  rename("Matrix" = sampletype_f, "Plastic?" = plastic_f, "Morphology" = morphology_f, "Size Fraction" = sizefraction_f, 
+         "Number of Spiked Particles" = total_spike_mean, "Standard Deviation" = total_spike_sd)
+
+kable(e, digits = 2, caption = "Average Number of Spiked Particles per Sample by Morphology Within Size Fraction") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+# Counts
+
+The following section describes data as absolute particle counts that were reported in each sample. Note that Dirty Water samples were not spiked with any particles less than 212µm and are therefore distinct from the other matrices.  
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10}
+
+spike <- Join_NileRed_Total %>%
+  #Remove spiked particles with problematic RSD
+  filter(!(labid == "R" & sampletype_f == "Clean Water")) %>% 
+  filter(plastic_f != "N") %>% 
+  ungroup() %>%
+  group_by(sampletype_f) %>% 
+  mutate(mean_spike = mean(total_spike)) 
+
+#Total - By Lab
+
+a <- Results_Clean_NileRed %>% 
+  #Data manipulation
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blanks
+  group_by(labid, sampleid, total, expertise, sampletype_f) %>% 
+  summarise() %>% 
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%   
+  #Creating plot
+  ggplot(aes(x= labid, y= total)) +
+  theme_test() +
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(data = spike, aes(yintercept = mean_spike), linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  facet_wrap(~sampletype_f, ncol = 2)+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Particle Count", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Raw Particle Count", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line represents the number of spiked polymer particles.\nNot blank corrected.")
+
+plot(a)
+
+b <- Results_Clean_NileRed %>% 
+  filter(blank != "Y") %>% 
+  select(sampletype_f, labid, sampleid, total) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Lab ID" = labid) %>%
+  rename("Sample ID" = sampleid) %>%
+  rename("Total Particles" = total) %>%
+  distinct() 
+
+kable(b, digits = 2, caption = "Raw Particle Count. Summary statistics by sample (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+#Total - Summary
+c <- Results_Clean_NileRed %>%  
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blanks
+  group_by(labid, sampleid, nilered_f, total, sampletype_f) %>% 
+  summarise() %>% 
+  group_by(labid) %>% 
+  mutate(total_mean = mean(total)) %>% 
+  ungroup() %>% 
+  group_by(labid, nilered_f, total_mean, sampletype_f) %>% 
+  summarise() %>%   
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= total_mean)) +
+  theme_test() +
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_hline(data = spike, aes(yintercept = mean_spike), linetype = "dotted")+
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +
+  scale_fill_manual(values = c("darkmagenta")) +
+  facet_wrap(~sampletype_f, ncol = 2)+
+  expand_limits(y = 0) +
+  labs(y = "Particle Count", fill = "Lab", title = "NileRed", subtitle = "Raw Particle Count", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents the number of spiked polymer particles.\nNot blank corrected.")
+  
+plot(c)
+
+d <- Results_Clean_NileRed %>% 
+  filter(blank != "Y") %>% 
+  group_by(sampletype_f, labid, total) %>% 
+  summarise() %>% 
+  mutate(`Mean`= mean(total)) %>%  
+  mutate(`Median` = median(total)) %>%
+  mutate(`SD` = sd(total)) %>%
+  mutate(`Min` = min(total)) %>% 
+  mutate(`Max` = max(total)) %>%
+  ungroup() %>% 
+  select(sampletype_f, labid, `Mean`, `Median`, `SD`, `Min`, `Max`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Lab ID" = labid) %>%
+  distinct() 
+
+kable(d, digits = 2, caption = "Raw Particle Count. Summary statistics by laboratory (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+e <- Results_Clean_NileRed %>%  
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blanks
+  group_by(sampletype_f, labid, total) %>% 
+  summarise() %>% 
+  mutate(total_mean = mean(total)) %>% 
+  ungroup() %>% 
+  distinct(sampletype_f, labid, total_mean) %>%
+  group_by(sampletype_f) %>% 
+  mutate(`Mean`= mean(total_mean)) %>%  
+  mutate(`Median` = median(total_mean)) %>%
+  mutate(`SD` = sd(total_mean)) %>%
+  mutate(`Min` = min(total_mean)) %>% 
+  mutate(`Max` = max(total_mean)) %>%
+  ungroup() %>% 
+  select(sampletype_f, `Mean`, `Median`, `SD`, `Min`, `Max`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  distinct() 
+
+kable(e, digits = 2, caption = "Raw Particle Count. Global summary statistics. Not blank corrected.")%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+```
+
+# Clean Water, Fish Tissue and Sediment Comparisons
+
+Clean Water, Fish Tissue and Sediment samples were spiked with the same materials. Therefore, comparisons may be made for all particle types. Matrix comparisons including dirty water are included in later sections, but only for particle types >212 µm. 
+
+## Recovery
+
+The following plots display the recovery (reported count/spiked count (%)) obtained from microscopy with nile red. **Reported particle characteristics must match expected particle characteristics of the spiking materials to count towards recovery estimations.** For example, the colors of polymer spiking materials are defined as white, orange, blue, clear and green. Colors outside of these definitions are not included in this section (see Counts). 
+
+The dotted line is at 100% and the grey area represents the mean RSD for each given category. The data are **not** blank corrected.
+
+Recovery in this section is estimated based on a single particle characteristic. For example, if the sample was spiked with 10 green particles and 8 green particles were recovered, recovery is estimated as 80% regardless of whether or not the shape or size fraction also matches the spiking material. More restrictive recovery analysis are reported later on in this document.
+
+### Total
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10, fig.height = 10}
+
+#Total - By Lab
+a <- Join_NileRed_Total %>%
+  filter(sampletype_f != "Dirty Water") %>% 
+  filter(plastic_f != "N") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%  
+  #Creating plot
+  ggplot(aes(x=labid, y= total_pct_recovery)) +
+  theme_test() +
+  geom_rect(ymin = 95.7, ymax = 104.3, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Total Particle Recovery", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(a)
+
+#Total - By Lab
+a_a <- Join_NileRed_Total %>%
+  filter(sampletype_f != "Dirty Water") %>% 
+  filter(plastic_f != "N") %>% 
+  ungroup() %>% 
+  group_by(labid) %>% 
+  mutate(All_Matrices = if_else(n_distinct(sampletype_f) == 3, "Y", "N")) %>% 
+  filter(All_Matrices == "Y") %>% 
+  ungroup() %>% 
+  #Creating plot
+  ggplot(aes(x=labid, y= total_pct_recovery)) +
+  theme_test() +
+  geom_rect(ymin = 95.7, ymax = 104.3, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = sampletype_f, fill = sampletype_f, group = sampletype_f), alpha = 0.7, width = .05, size = 3, position = position_dodge(width = 0.75)) +
+  geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill =sampletype_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4"))+
+  scale_color_manual(values = c("royalblue", "darksalmon", "goldenrod4"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Matrix", color = "Matrix", title = "NileRed", subtitle = "Total Particle Recovery", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(a_a)
+
+b <- Join_NileRed_Total %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  group_by(sampletype_f, labid, sampleid, total_pct_recovery) %>%
+  summarise() %>% 
+  rename("Matrix" = sampletype_f) %>% 
+  rename("Lab ID" = labid) %>%
+  rename("Sample ID" = sampleid) %>%
+  rename("Recovery" = total_pct_recovery) %>%
+  distinct() 
+
+kable(b, digits = 2, caption = "NileRed: Total Particle Recovery. Summary statistics by sample (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+#Total - Summary
+c<- Join_NileRed_Total %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, total_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid) %>% 
+  mutate(total_pct_recovery_mean = mean(total_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, nilered_f, total_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= total_pct_recovery_mean)) +
+  theme_test() +
+  geom_rect(ymin = 95.7, ymax = 104.3, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Total Particle Recovery", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(c)
+
+d <- Join_NileRed_Total %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  group_by(sampletype_f, labid) %>% 
+  mutate(`Mean (%)`= mean(total_pct_recovery)) %>%  
+  mutate(`Median (%)` = median(total_pct_recovery)) %>%
+  mutate(`SD (%)` = sd(total_pct_recovery)) %>%
+  mutate(`Min (%)` = min(total_pct_recovery)) %>% 
+  mutate(`Max (%)` = max(total_pct_recovery)) %>%
+  ungroup() %>% 
+  select(sampletype_f, labid, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  rename("Matrix" = sampletype_f) %>%  
+  rename("Lab ID" = labid) %>%
+  distinct() 
+
+kable(d, digits = 2, caption = "NileRed: Total Particle Recovery. Summary statistics by laboratory (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+e <- Join_NileRed_Total %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  group_by(sampletype_f, labid) %>% 
+  mutate(mean_lab = mean(total_pct_recovery)) %>% 
+  ungroup() %>%
+  distinct(sampletype_f, labid, mean_lab) %>%
+  group_by(sampletype_f) %>% 
+  mutate(`Mean (%)`= mean(mean_lab)) %>%    
+  mutate(`Median (%)` = median(mean_lab)) %>%
+  mutate(`SD (%)` = sd(mean_lab)) %>%
+  mutate(`Min (%)` = min(mean_lab)) %>% 
+  mutate(`Max (%)` = max(mean_lab)) %>%
+  ungroup() %>% 
+  rename("Matrix" = sampletype_f) %>% 
+  select(`Matrix`, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  distinct() 
+
+kable(e, digits = 2, caption = "NileRed: Total Particle Recovery. Summary statistics across all laboratories. Not blank corrected.")%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+```
+
+### Size Fraction
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10}
+
+#All Size Fractions
+a <- Join_NileRed_SizeFraction %>%  
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Force size fractions to be in the correct order
+  mutate(sizefraction_f = factor(sizefraction_f, levels = c("1-20 µm", "20-212 µm","212-500 µm",">500 µm"))) %>% 
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, nilered_f, sizefraction_f, sizefrac_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=sampletype_f, y= sizefrac_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sizefraction_f, ncol = 2, scales = "free")+
+  theme(text = element_text(size = 13),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, All Size Fractions", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(a)
+
+#1-20µm - By Lab
+b <- Join_NileRed_SizeFraction %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  filter(sizefraction_f == "1-20 µm") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Creating plot
+  ggplot(aes(x=labid, y= sizefrac_pct_recovery)) +
+  theme_test() +
+  #No RSD data for the 1-20 µm size fraction
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Particle Recovery, 1-20 µm", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(b)
+
+#1-20µm - Summary
+c <- Join_NileRed_SizeFraction %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
+  ungroup() %>% 
+  filter(sizefraction_f == "1-20 µm") %>%
+  group_by(sampletype_f, labid, nilered_f, sizefrac_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= sizefrac_pct_recovery_mean)) +
+  theme_test() +
+  #No RSD data for the 1-20 µm size fraction
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, 1-20 µm", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(c)
+
+#20-212 µm - By Lab
+d <- Join_NileRed_SizeFraction %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  filter(sizefraction_f == "20-212 µm") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Creating plot
+  ggplot(aes(x=labid, y= sizefrac_pct_recovery)) +
+  theme_test() +
+  geom_rect(ymin = 91.6, ymax = 108.4, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Particle Recovery, 20-212 µm", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(d)
+
+#20-212 µm - Summary
+e <- Join_NileRed_SizeFraction %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
+  ungroup() %>% 
+  filter(sizefraction_f == "20-212 µm") %>%
+  group_by(sampletype_f, labid, nilered_f, sizefrac_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= sizefrac_pct_recovery_mean)) +
+  theme_test() +
+  geom_rect(ymin = 91.6, ymax = 108.4, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, 20-212 µm", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(e)
+
+#212-500 µm - By Lab
+f <- Join_NileRed_SizeFraction %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  filter(sizefraction_f == "212-500 µm") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Creating plot
+  ggplot(aes(x=labid, y= sizefrac_pct_recovery)) +
+  theme_test() +
+  geom_rect(ymin = 91.05, ymax = 108.95, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Particle Recovery, 212-500 µm", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(f)
+
+#212-500 µm - Summary
+g <- Join_NileRed_SizeFraction %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
+  ungroup() %>% 
+  filter(sizefraction_f == "212-500 µm") %>%
+  group_by(sampletype_f, labid, nilered_f, sizefrac_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= sizefrac_pct_recovery_mean)) +
+  theme_test() +
+  geom_rect(ymin = 91.05, ymax = 108.95, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, 212-500 µm", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(g)
+
+#>500 µm - By Lab
+h <- Join_NileRed_SizeFraction %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  filter(sizefraction_f == ">500 µm") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Creating plot
+  ggplot(aes(x=labid, y= sizefrac_pct_recovery)) +
+  theme_test() +
+  #No RSD data for the >500 µm size fraction
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Particle Recovery, >500 µm", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(h)
+
+#>500 µm - Summary
+i <- Join_NileRed_SizeFraction %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
+  ungroup() %>% 
+  filter(sizefraction_f == ">500 µm") %>%
+  group_by(sampletype_f, labid, nilered_f, sizefrac_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= sizefrac_pct_recovery_mean)) +
+  theme_test() +
+  #No RSD data for the >500 µm size fraction
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, >500 µm", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(i)
+
+#Size Fraction - By Sample
+j <- Join_NileRed_SizeFraction %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  group_by(sampletype_f, labid, sampleid, sizefraction_f, sizefrac_pct_recovery) %>% 
+  summarise() %>% 
+  rename("Matrix" = sampletype_f) %>%
+  rename("Lab ID" = labid) %>%
+  rename("Sample ID" = sampleid) %>%
+  rename("Size Fraction" = sizefraction_f) %>%
+  rename("Recovery" = sizefrac_pct_recovery) %>%
+  distinct() %>% 
+  arrange(`Matrix`, `Lab ID`, `Sample ID`, `Size Fraction`)
+
+kable(j, digits = 2, caption = "NileRed: Total Particle Recovery by Size Fraction. Summary statistics by sample (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+#Size Fraction - By Lab
+k <- Join_NileRed_SizeFraction %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>% 
+  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  mutate(`Mean (%)`= mean(sizefrac_pct_recovery)) %>%  
+  mutate(`Median (%)` = median(sizefrac_pct_recovery)) %>%
+  mutate(`SD (%)` = sd(sizefrac_pct_recovery)) %>%
+  mutate(`Min (%)` = min(sizefrac_pct_recovery)) %>% 
+  mutate(`Max (%)` = max(sizefrac_pct_recovery)) %>%
+  ungroup() %>% 
+  select(sampletype_f, labid, sizefraction_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Lab ID" = labid) %>%
+  rename("Size Fraction" = sizefraction_f) %>%
+  distinct() %>% 
+  arrange(`Lab ID`, `Size Fraction`)
+
+kable(k, digits = 2, caption = "NileRed: Total Particle Recovery by Size Fraction. Summary statistics by laboratory (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+#Size Fraction - Summary
+l <- k %>% 
+  group_by(`Matrix`, `Size Fraction`) %>% 
+  mutate(`Global Mean (%)`= mean(`Mean (%)`)) %>%   
+  mutate(`Median (%)` = median(`Mean (%)`)) %>%
+  mutate(`SD (%)` = sd(`Mean (%)`)) %>%
+  mutate(`Min (%)` = min(`Mean (%)`)) %>% 
+  mutate(`Max (%)` = max(`Mean (%)`)) %>%
+  ungroup() %>% 
+  select(`Matrix`, `Size Fraction`, `Global Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  distinct() %>% 
+  arrange(`Matrix`,`Size Fraction`)
+
+kable(l, digits = 2, caption = "NileRed: Total Particle Recovery by Size Fraction. Summary statistics across all laboratories. Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+### Morphology
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10}
+
+#All Morphologies
+a <- Join_NileRed_Morphology %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, morphology_f, morphology_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, morphology_f) %>% 
+  mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, nilered_f, morphology_f, morphology_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=sampletype_f, y= morphology_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.7,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~morphology_f, ncol = 3, scales = "free")+
+  theme(text = element_text(size = 13),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, All Morphologies", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(a)
+
+
+#Fibers - By Lab
+b <- Join_NileRed_Morphology %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  filter(morphology_f == "Fiber") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Creating plot
+  ggplot(aes(x=labid, y= morphology_pct_recovery)) +
+  theme_test() +
+  #No RSD data for fibers
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Particle Recovery, Fibers", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(b)
+
+#Fiber - Summary
+c <- Join_NileRed_Morphology %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, morphology_f, morphology_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, morphology_f) %>% 
+  mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
+  ungroup() %>% 
+  filter(morphology_f == "Fiber") %>%
+  group_by(sampletype_f, labid, nilered_f,morphology_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= morphology_pct_recovery_mean)) +
+  theme_test() +
+  #No RSD data for fibers
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, Fibers", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(c)
+
+#Spheres - By Lab
+d <- Join_NileRed_Morphology %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  filter(morphology_f == "Sphere") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Creating plot
+  ggplot(aes(x=labid, y= morphology_pct_recovery)) +
+  theme_test() +
+  geom_rect(ymin = 98.2, ymax = 101.8, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Particle Recovery, Spheres", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(d)
+
+#Sphere - Summary
+e <- Join_NileRed_Morphology %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, morphology_f, morphology_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, morphology_f) %>% 
+  mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
+  ungroup() %>% 
+  filter(morphology_f == "Sphere") %>%
+  group_by(sampletype_f, labid, nilered_f,morphology_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= morphology_pct_recovery_mean)) +
+  theme_test() +
+  geom_rect(ymin = 98.2, ymax = 101.8, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, Sphere", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(e)
+
+#Fragments - By Lab
+f <- Join_NileRed_Morphology %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  filter(morphology_f == "Fragment") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Creating plot
+  ggplot(aes(x=labid, y= morphology_pct_recovery)) +
+  theme_test() +
+  geom_rect(ymin = 93.6, ymax = 106.4, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Particle Recovery, Fragments", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(f)
+
+#Fragments - Summary
+g <- Join_NileRed_Morphology %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, morphology_f, morphology_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, morphology_f) %>% 
+  mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
+  ungroup() %>% 
+  filter(morphology_f == "Fragment") %>%
+  group_by(sampletype_f, labid, nilered_f,morphology_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= morphology_pct_recovery_mean)) +
+  theme_test() +
+  geom_rect(ymin = 93.6, ymax = 106.4, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +facet_wrap(~sampletype_f, ncol = 3)+
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, Fragments", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(g)
+
+#Morphology - By Sample
+h <- Join_NileRed_Morphology %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  group_by(sampletype_f, labid, sampleid, morphology_f, morphology_pct_recovery) %>% 
+  summarise() %>%
+  rename("Matrix" = sampletype_f) %>% 
+  rename("Lab ID" = labid) %>%
+  rename("Sample ID" = sampleid) %>%
+  rename("Morphology" = morphology_f) %>%
+  rename("Recovery" = morphology_pct_recovery) %>%
+  distinct() 
+
+kable(h, digits = 2, caption = "NileRed: Total Particle Recovery by Size Fraction. Summary statistics by sample (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+#Morphology - By Lab
+i <- Join_NileRed_Morphology %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  group_by(sampletype_f, labid, morphology_f) %>% 
+  mutate(`Mean (%)`= mean(morphology_pct_recovery)) %>%  
+  mutate(`Median (%)` = median(morphology_pct_recovery)) %>%
+  mutate(`SD (%)` = sd(morphology_pct_recovery)) %>%
+  mutate(`Min (%)` = min(morphology_pct_recovery)) %>% 
+  mutate(`Max (%)` = max(morphology_pct_recovery)) %>%
+  ungroup() %>% 
+  select(sampletype_f, labid, morphology_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  rename("Matrix" = sampletype_f) %>% 
+  rename("Lab ID" = labid) %>%
+  rename("Morphology" = morphology_f) %>%
+  distinct() 
+
+kable(i, digits = 2, caption = "NileRed: Total Particle Recovery by Morphology. Summary statistics by laboratory (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px") 
+
+#Morphology - Summary
+j <- Join_NileRed_Morphology %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  group_by(sampletype_f, morphology_f) %>% 
+  mutate(`Mean (%)`= mean(morphology_pct_recovery)) %>%  
+  mutate(`Median (%)` = median(morphology_pct_recovery)) %>%
+  mutate(`SD (%)` = sd(morphology_pct_recovery)) %>%
+  mutate(`Min (%)` = min(morphology_pct_recovery)) %>% 
+  mutate(`Max (%)` = max(morphology_pct_recovery)) %>%
+  ungroup() %>% 
+  select(sampletype_f, morphology_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Morphology" = morphology_f) %>%
+  distinct() 
+
+kable(j, digits = 2, caption = "NileRed: Total Particle Recovery by Morphology. Summary statistics across all laboratories. Not blank corrected.")%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+```
+
+### Morphology within Size Fraction
+
+The following plots display the recovery (reported count/spiked count (%)) obtained from microscopy with nile red. **Reported particle characteristics must match expected particle characteristics of the spiking materials to count towards recovery estimations.** For example, the morphologies of polymer spiking materials are defined as spheres, fragments, and fibers. Morphologies outside of these definitions are currently excluded from analysis. 
+
+The dotted line is at 100% and the grey area represents the mean RSD for each given category. The data are **not** blank corrected.
+
+Recovery in this section is estimated based on color and morphology within a size fraction. For example, if the sample was spiked with 10 spheres >500 µm and 8 spheres were recovered in the >500 µm size fraction, recovery is estimated as 80%. However, if 4 of these spheres were reported as pellets rather than spheres, recovery would fall to 60%. 
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, results = 'asis'}
+
+#Make data frame of particle characteristics
+df <- Join_NileRed_Combo %>%
+  filter(sampletype_f != "Dirty Water") %>% 
+  filter(plastic_f == "Y") %>% 
+  group_by(sampletype_f, morphology_f, sizefraction_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df))
+
+{ #Open loop  
+  
+#By Lab
+a <- Join_NileRed_Combo %>%
+  filter(plastic_f != "N") %>%
+  filter(sampletype_f != "Dirty Water") %>% 
+  group_by(labid, sampleid, sizefraction_f, morphology_f, morphology_sizefraction_pct_recovery) %>% 
+  filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
+  filter(morphology_f == df$morphology_f[[i]]) %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%  
+  #Creating plot
+  ggplot(aes(x=labid, y= morphology_sizefraction_pct_recovery)) +
+  theme_test() +
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  facet_wrap(~sampletype_f, scales = "free")+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "Nile Red", 
+       subtitle = paste(df$sizefraction_f[[i]], df$morphology_f[[i]]), 
+       caption = "Points represent individual samples spiked with microplastic particles.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(a)
+
+#Summary
+b <- Join_NileRed_Combo %>%
+  filter(plastic_f != "N") %>%
+  filter(sampletype_f != "Dirty Water") %>% 
+  filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
+  filter(morphology_f == df$morphology_f[[i]]) %>%
+  group_by(labid) %>%
+  mutate(morphology_sizefraction_pct_recovery_mean = mean(morphology_sizefraction_pct_recovery)) %>%
+  ungroup() %>%
+  group_by(sampletype_f, labid, nilered_f, morphology_sizefraction_pct_recovery_mean) %>%
+  summarise() %>%  
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= morphology_sizefraction_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = nilered_f, fill = nilered_f), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  facet_wrap(~sampletype_f, scales = "free")+
+  scale_color_manual(values = c("darkmagenta")) +
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", title = "Nile Red", 
+       subtitle = paste(df$sizefraction_f[[i]], df$morphology_f[[i]]),
+       caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(b)
+ 
+#By Sample
+c <- Join_NileRed_Combo %>%
+  filter(plastic_f != "N") %>%
+  filter(sampletype_f != "Dirty Water") %>% 
+  group_by(sampletype_f, labid, sizefraction_f, morphology_f) %>%
+  filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
+  filter(morphology_f == df$morphology_f[[i]]) %>%
+  ungroup() %>%
+  select(sampletype_f, labid, sampleid, morphology_sizefraction_pct_recovery) %>%
+  rename("Matrix" = sampletype_f) %>% 
+  rename("Lab ID" = labid) %>%
+  rename("Sample ID" = sampleid) %>%
+  rename("Recovery" = morphology_sizefraction_pct_recovery) %>%
+  distinct()
+
+print(kable(c, digits = 2, caption = paste(df$sizefraction_f[[i]], df$morphology_f[[i]])) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px"))
+  cat('\n')
+
+#By Lab
+d <- Join_NileRed_Combo %>%
+  filter(plastic_f != "N") %>%
+  filter(sampletype_f != "Dirty Water") %>% 
+  group_by(sampletype_f, labid, sizefraction_f, morphology_f) %>%
+  filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
+  filter(morphology_f == df$morphology_f[[i]]) %>%
+  mutate(Mean = mean(morphology_sizefraction_pct_recovery)) %>%
+  mutate(Median = median(morphology_sizefraction_pct_recovery)) %>%
+  mutate(SD = sd(morphology_sizefraction_pct_recovery)) %>%
+  mutate(Min = min(morphology_sizefraction_pct_recovery)) %>%
+  mutate(Max = max(morphology_sizefraction_pct_recovery)) %>%
+  ungroup() %>%
+  select(sampletype_f, labid, Mean, Median, SD, Min, Max) %>%
+  rename("Matrix" = sampletype_f) %>% 
+  rename("Lab ID" = labid) %>%
+  rename("Mean (%)" = Mean) %>%
+  rename("Median (%)" = Median) %>%
+  rename("SD (%)" = SD) %>%
+  rename("Min (%)" = Min) %>%
+  rename("Max (%)" = Max) %>%
+  distinct()
+
+print(kable(d, digits = 2, caption = paste(df$sizefraction_f[[i]], df$morphology_f[[i]])) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px"))  
+  cat('\n')
+
+ } #Close loop
+
+```
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE}
+
+#### All Spiked Particles Summary ####
+Combo_Microscopy_Summary_Table <- Join_NileRed_Combo %>%
+  filter(plastic_f != "N") %>%
+  filter(sampletype_f != "Dirty Water") %>% 
+  group_by(labid, sizefraction_f, morphology_f) %>%
+  mutate(Mean = mean(morphology_sizefraction_pct_recovery)) %>%
+  mutate(Median = median(morphology_sizefraction_pct_recovery)) %>%
+  mutate(SD = sd(morphology_sizefraction_pct_recovery)) %>%
+  mutate(Min = min(morphology_sizefraction_pct_recovery)) %>%
+  mutate(Max = max(morphology_sizefraction_pct_recovery)) %>%
+  ungroup() %>%
+  group_by(sizefraction_f, morphology_f) %>%
+  mutate(`Mean (%)`= mean(Mean)) %>%
+  mutate(`Median (%)` = median(Mean)) %>%
+  mutate(`SD (%)` = sd(Mean)) %>%
+  mutate(`Min (%)` = min(Mean)) %>%
+  mutate(`Max (%)` = max(Mean)) %>%
+  ungroup() %>%
+  select(sizefraction_f, morphology_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  rename("Size Fraction" = sizefraction_f) %>%
+  rename("Morphology" = morphology_f) %>%
+  distinct()
+
+kable(Combo_Microscopy_Summary_Table, digits = 2, caption = "Nile Red: Recovery, All Spiked Particles. Summary statistics across all laboratories. Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+# Clean Water, Fish Tissue, Sediment & Dirty Water Comparisons > 212 µm
+
+The following analyses are identical to those above, but spiked particles that are predicted to fall into size fractions less than 212 µm or particles that were found in size fractions less than 212 µm are excluded from analysis so that comparisons may be made across all matrices. More specifically, only the following size fractions are included: 212-500 µm, 250-500 µm and >500 µm. 
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#WARNING: VARIABLE NAMES ARE THE SAME AS ABOVE. 
+#THEY WILL BE WRITTEN OVER IN THE ENVIRONMENT. 
+#THIS SCRIPT PICKS UP AT THE BEGINNING OF MICROSCOPY DATA TIDYING 
+
+# Results are selected to only include particles that were identified via nile red. Counts for unique samples and particle IDs for total, size fraction, color and morphology are calculated and a new column is created for each.
+
+#Calculate the number of particles for each characteristic and combination 
+
+Results_Clean_NileRed <- Results_Clean %>%
+  
+  #Size fraction filter
+  filter(sizefraction_f %in% c("212-500 µm", "250-500 µm", ">500 µm", ">212 µm")) %>% 
+  
+  #Select particles analyzed by nile red
+  filter(nilered_f == "Yes") %>%
+  group_by(sampletype_f, sampleid) %>% 
+  #Total particles per sample
+  mutate(total = n_distinct(sampleid, particleid)) %>% 
+  ungroup() %>% 
+  #Total particles by size fraction
+  group_by(sampletype_f, sampleid, sizefraction_f) %>% 
+  mutate(total_sizefraction = n_distinct(sampleid, particleid)) %>%  
+  ungroup() %>%  
+  #Total particles by morphology
+  group_by(sampletype_f, sampleid, morphology_f) %>% 
+  mutate(total_morphology = n_distinct(sampleid, particleid)) %>% 
+  ungroup() %>% 
+  #Total particles by  morphology within size fraction
+  group_by(sampletype_f, sampleid, sizefraction_f, morphology_f) %>% 
+  mutate(total_morphology_sizefraction = n_distinct(sampleid, particleid)) %>% 
+  ungroup() %>% 
+  #Select and rename relevant type of expertise to work for fields below
+  rename("expertise" = expertisevisualmicroscopy) %>% 
+  replace_na(list(expertise = "Not Reported")) 
+
+```
+
+```{r, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#Particle counts within each sample are totaled for the following categories: total, size fraction, morphology, color, and polymer. A new column is created for each categories. Values are sample specific. 
+
+Reference_Clean <- Reference %>%
+  #Remove small size fraction spiking data from lab R that isn't in other samples
+  filter(!(labid == "R" & sizefraction == "20-Jan" & sampletype == "DW")) %>% 
+  filter(!(labid == "R" & sizefraction == "20-212" & sampletype == "DW")) %>% 
+  
+  #Drop spiking values of 0 or NAs
+  filter(!averagenumber == 0) %>% 
+  
+  #Create factor for color
+  mutate(color = case_when(
+    color == "white" ~ "White",
+    color == "orange" ~ "Orange",
+    color == "green" ~ "Green",
+    color == "red" ~ "Red",
+    color == "blue" ~ "Blue",
+    color == "clear" ~ "Clear")) %>% 
+  mutate(color_f = as.factor(color)) %>% 
+  #Create factor for shape
+  mutate(morphology = case_when(
+    morphology == "fragment" ~ "Fragment",
+    morphology == "sphere" ~ "Sphere",
+    morphology == "fiber" ~ "Fiber")) %>%  
+    mutate(morphology_f = as.factor(morphology)) %>% 
+  #Create factor for size fraction
+   mutate(sizefraction = case_when(
+    sizefraction == "20-Jan" ~ "1-20 µm",
+    sizefraction == "1-20" ~ "1-20 µm",
+    sizefraction == "20-212" ~ "20-212 µm",
+    sizefraction == "212-500" ~ "212-500 µm",
+    sizefraction == ">500" ~ ">500 µm")) %>%   
+  mutate(sizefraction_f = as.factor(sizefraction)) %>%
+  mutate(plastic_f = as.factor(plastic)) %>%
+  mutate(sampletype = case_when(
+    sampletype == "CW" ~ "Clean Water",
+    sampletype == "FT" ~ "Fish Tissue",
+    sampletype == "SD" ~ "Sediment",
+    sampletype == "DW" ~ "Dirty Water")) %>% 
+  mutate(sampletype_f = as.factor(sampletype)) %>%
+  
+  #Size fraction filter
+  filter(sizefraction_f %in% c("212-500 µm", "250-500 µm", ">500 µm")) %>% 
+  
+#All of the following calculations distinguish between plastic and non-plastic spikes
+  #Total particle spike per sample
+  group_by(sampletype_f, sampleid, plastic_f) %>% 
+  mutate(total_spike = sum(averagenumber, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  #Total particle spike per size fraction
+  group_by(sampletype_f, sampleid, plastic_f, sizefraction_f) %>% 
+  mutate(total_spike_sizefraction = sum(averagenumber, na.rm = TRUE)) %>% 
+  ungroup() %>%
+  #Total particle spike per morphology
+  group_by(sampletype_f, sampleid, plastic_f, morphology_f) %>% 
+  mutate(total_spike_morphology = sum(averagenumber, na.rm = TRUE)) %>% 
+  ungroup()%>%
+  #Total particle spike per size fraction and morphology
+  group_by(sampletype_f, sampleid, plastic_f, sizefraction_f, morphology_f) %>% 
+  mutate(total_spike_morphology_sizefraction = sum(averagenumber, na.rm = TRUE)) %>% 
+  ungroup()  
+
+```
+
+```{r, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE}
+
+#Join relevant columns of reference data frame and results to compare expected counts to actual counts for nile red only data. Recovery for each category is calculated on a sample-specific basis. A new recovery column is created for each category. 
+
+#Total
+totalspikecol <- Reference_Clean %>% #Select total_spike column from reference
+  distinct(sampletype_f, sampleid, plastic_f, total_spike)
+  
+Join_NileRed_Total <- inner_join(Results_Clean_NileRed, totalspikecol, by = c("sampleid", "sampletype_f")) %>% #Join total_spike column to nile red results data frame
+    mutate(total_pct_recovery = ((total/total_spike)*100)) %>%  #Create a new column for the total recovery of nile red only results
+    group_by(labid, sampletype_f, sampleid, plastic_f, nilered_f, total, total_spike, total_pct_recovery, expertise) %>% 
+    summarise()
+    
+#Size Fraction
+sizefractionspikecol <- Reference_Clean %>% 
+  distinct(sampletype_f, sampleid, plastic_f, sizefraction_f, total_spike_sizefraction)
+  
+sizefractionsumresults <- Results_Clean_NileRed %>% 
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
+  drop_na(sizefraction_f) %>% #Drop particles not assigned to a size fraction
+  group_by(labid, sampletype_f, sampleid, nilered_f, sizefraction_f, total_sizefraction, expertise) %>% 
+  summarise()
+
+Join_NileRed_SizeFraction <- inner_join(sizefractionsumresults, sizefractionspikecol, by = c("sampleid" = "sampleid", "sizefraction_f" = "sizefraction_f", "sampletype_f")) %>%  
+    mutate(sizefrac_pct_recovery = ((total_sizefraction/total_spike_sizefraction)*100)) 
+
+#Morphology
+morphologyspikecol <- Reference_Clean %>% 
+  distinct(sampletype_f, sampleid, plastic_f, morphology_f, total_spike_morphology)
+  
+morphologysumresults <- Results_Clean_NileRed %>% 
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
+  group_by(labid, sampletype_f, sampleid, nilered_f, morphology_f, total_morphology, expertise) %>% 
+  summarise()
+
+Join_NileRed_Morphology <- inner_join(morphologysumresults, morphologyspikecol, by = c("sampleid" = "sampleid", "morphology_f" = "morphology_f", "sampletype_f")) %>%  
+    mutate(morphology_pct_recovery = ((total_morphology/total_spike_morphology)*100))
+
+#Combination - Size Fraction and Morphology 
+
+ combospikecol <- Reference_Clean %>%
+   distinct(sampletype_f, sampleid, plastic_f, sizefraction_f, morphology_f, total_spike_morphology_sizefraction)
+
+ combosumresults <- Results_Clean_NileRed %>%
+   filter(!grepl("4", sampleid)) %>%
+   filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
+   drop_na(sizefraction_f) %>% #Drop particles not assigned to a size fraction
+   group_by(labid, sampletype_f, sampleid, nilered_f, sizefraction_f, morphology_f, total_morphology_sizefraction, expertise) %>%
+   summarise()
+
+ Join_NileRed_Combo <- inner_join(combosumresults, combospikecol, by = c("sampleid" = "sampleid", "morphology_f" = "morphology_f", "sizefraction_f" = "sizefraction_f", "sampletype_f")) %>%
+   mutate(morphology_sizefraction_pct_recovery = ((total_morphology_sizefraction/total_spike_morphology_sizefraction)*100))
+
+```
+
+## Recovery
+
+The following plots display the recovery (reported count/spiked count (%)) obtained from microscopy with nile red. **Reported particle characteristics must match expected particle characteristics of the spiking materials to count towards recovery estimations.** For example, the colors of polymer spiking materials are defined as white, orange, blue, clear and green. Colors outside of these definitions are not included in this section (see Counts). 
+
+The dotted line is at 100% and the grey area represents the mean RSD for each given category. The data are **not** blank corrected.
+
+Recovery in this section is estimated based on a single particle characteristic. For example, if the sample was spiked with 10 green particles and 8 green particles were recovered, recovery is estimated as 80% regardless of whether or not the shape or size fraction also matches the spiking material. More restrictive recovery analysis are reported later on in this document.
+
+### Total
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, results = 'asis'}
+
+#Make data frame of particle characteristics
+df <- Join_NileRed_Combo %>%
+  filter(plastic_f == "Y") %>% 
+  group_by(morphology_f, sizefraction_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df))
+
+{ #Open loop  
+  
+#By Lab
+a <- Join_NileRed_Combo %>%
+  group_by(labid, sampleid, nilered_f,sizefraction_f, morphology_f, morphology_sizefraction_pct_recovery) %>% 
+  filter(sizefraction_f == df$sizefraction_f[[i]]) %>%
+  filter(morphology_f == df$morphology_f[[i]]) %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%  
+  #Creating plot
+  ggplot(aes(x=labid, y= morphology_sizefraction_pct_recovery)) +
+  theme_test() +
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "Microscopy", 
+       subtitle = paste(df$sizefraction_f[[i]], df$morphology_f[[i]]), 
+       caption = "Points represent individual samples spiked with microplastic particles.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(a)
+
+#Summary
+b <- Join_NileRed_Combo %>%
+  filter(sizefraction_f == df$sizefraction_f[[i]]) %>%
+  filter(morphology_f == df$morphology_f[[i]]) %>%
+  group_by(labid) %>%
+  mutate(morphology_sizefraction_pct_recovery_mean = mean(morphology_sizefraction_pct_recovery)) %>%
+  ungroup() %>%
+  group_by(labid, nilered_f,morphology_sizefraction_pct_recovery_mean) %>%
+  summarise() %>%
+  #Creating plot
+  ggplot(aes(x=nilered_f,y= morphology_sizefraction_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = nilered_f, fill = nilered_f), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f,fill = nilered_f), outlier.shape = NA) +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta", "orchid")) +
+  scale_fill_manual(values = c("darkmagenta", "orchid")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Method", color = "Method", title = "Microscopy", 
+       subtitle = paste(df$sizefraction_f[[i]], df$morphology_f[[i]]),
+       caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(b)
+ 
+#By Sample
+c <- Join_NileRed_Combo %>%
+  group_by(labid, sizefraction_f, morphology_f) %>%
+  filter(sizefraction_f == df$sizefraction_f[[i]]) %>%
+  filter(morphology_f == df$morphology_f[[i]]) %>%
+  ungroup() %>%
+  select(labid, sampleid, morphology_sizefraction_pct_recovery) %>%
+  rename("Lab ID" = labid) %>%
+  rename("Sample ID" = sampleid) %>%
+  rename("Recovery" = morphology_sizefraction_pct_recovery) %>%
+  distinct()
+
+print(kable(c, digits = 2, caption = paste(df$sizefraction_f[[i]], df$morphology_f[[i]])) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px"))
+  cat('\n')
+
+#By Lab
+d <- Join_NileRed_Combo %>%
+  group_by(labid, sizefraction_f, morphology_f) %>%
+  filter(sizefraction_f == df$sizefraction_f[[i]]) %>%
+  filter(morphology_f == df$morphology_f[[i]]) %>%
+  mutate(Mean = mean(morphology_sizefraction_pct_recovery)) %>%
+  mutate(Median = median(morphology_sizefraction_pct_recovery)) %>%
+  mutate(SD = sd(morphology_sizefraction_pct_recovery)) %>%
+  mutate(Min = min(morphology_sizefraction_pct_recovery)) %>%
+  mutate(Max = max(morphology_sizefraction_pct_recovery)) %>%
+  ungroup() %>%
+  select(labid, Mean, Median, SD, Min, Max) %>%
+  rename("Lab ID" = labid) %>%
+  rename("Mean (%)" = Mean) %>%
+  rename("Median (%)" = Median) %>%
+  rename("SD (%)" = SD) %>%
+  rename("Min (%)" = Min) %>%
+  rename("Max (%)" = Max) %>%
+  distinct()
+
+print(kable(d, digits = 2, caption = paste(df$sizefraction_f[[i]], df$morphology_f[[i]])) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px"))  
+  cat('\n')
+
+
+ } #Close loop
+
+```
+
+### Size Fraction
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10}
+
+#All Size Fractions
+a <- Join_NileRed_SizeFraction %>%  
+  filter(plastic_f != "N") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Force size fractions to be in the correct order
+  mutate(sizefraction_f = factor(sizefraction_f, levels = c("212-500 µm",">500 µm"))) %>% 
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, nilered_f, sizefraction_f, sizefrac_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=sampletype_f, y= sizefrac_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sizefraction_f, ncol = 2, scales = "free")+
+  theme(text = element_text(size = 13),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, All Size Fractions", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(a)
+
+#212-500 µm - By Lab
+f <- Join_NileRed_SizeFraction %>%
+  filter(plastic_f != "N") %>%
+  filter(sizefraction_f == "212-500 µm") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Creating plot
+  ggplot(aes(x=labid, y= sizefrac_pct_recovery)) +
+  theme_test() +
+  geom_rect(ymin = 91.05, ymax = 108.95, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 2)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Particle Recovery, 212-500 µm", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(f)
+
+#212-500 µm - Summary
+g <- Join_NileRed_SizeFraction %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
+  ungroup() %>% 
+  filter(sizefraction_f == "212-500 µm") %>%
+  group_by(sampletype_f, labid, nilered_f, sizefrac_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= sizefrac_pct_recovery_mean)) +
+  theme_test() +
+  geom_rect(ymin = 91.05, ymax = 108.95, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 2)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, 212-500 µm", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(g)
+
+#>500 µm - By Lab
+h <- Join_NileRed_SizeFraction %>%
+  filter(plastic_f != "N") %>%
+  filter(sizefraction_f == ">500 µm") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Creating plot
+  ggplot(aes(x=labid, y= sizefrac_pct_recovery)) +
+  theme_test() +
+  #No RSD data for the >500 µm size fraction
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 2)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Particle Recovery, >500 µm", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(h)
+
+#>500 µm - Summary
+i <- Join_NileRed_SizeFraction %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
+  ungroup() %>% 
+  filter(sizefraction_f == ">500 µm") %>%
+  group_by(sampletype_f, labid, nilered_f, sizefrac_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= sizefrac_pct_recovery_mean)) +
+  theme_test() +
+  #No RSD data for the >500 µm size fraction
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 2)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, >500 µm", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(i)
+
+#Size Fraction - By Sample
+j <- Join_NileRed_SizeFraction %>%
+  filter(plastic_f != "N") %>%
+  group_by(sampletype_f, labid, sampleid, sizefraction_f, sizefrac_pct_recovery) %>% 
+  summarise() %>% 
+  rename("Matrix" = sampletype_f) %>%
+  rename("Lab ID" = labid) %>%
+  rename("Sample ID" = sampleid) %>%
+  rename("Size Fraction" = sizefraction_f) %>%
+  rename("Recovery" = sizefrac_pct_recovery) %>%
+  distinct() %>% 
+  arrange(`Matrix`, `Lab ID`, `Sample ID`, `Size Fraction`)
+
+kable(j, digits = 2, caption = "NileRed: Total Particle Recovery by Size Fraction. Summary statistics by sample (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+#Size Fraction - By Lab
+k <- Join_NileRed_SizeFraction %>%
+  filter(plastic_f != "N") %>% 
+  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  mutate(`Mean (%)`= mean(sizefrac_pct_recovery)) %>%  
+  mutate(`Median (%)` = median(sizefrac_pct_recovery)) %>%
+  mutate(`SD (%)` = sd(sizefrac_pct_recovery)) %>%
+  mutate(`Min (%)` = min(sizefrac_pct_recovery)) %>% 
+  mutate(`Max (%)` = max(sizefrac_pct_recovery)) %>%
+  ungroup() %>% 
+  select(sampletype_f, labid, sizefraction_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Lab ID" = labid) %>%
+  rename("Size Fraction" = sizefraction_f) %>%
+  distinct() %>% 
+  arrange(`Lab ID`, `Size Fraction`)
+
+kable(k, digits = 2, caption = "NileRed: Total Particle Recovery by Size Fraction. Summary statistics by laboratory (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+#Size Fraction - Summary
+l <- k %>% 
+  group_by(`Matrix`, `Size Fraction`) %>% 
+  mutate(`Global Mean (%)`= mean(`Mean (%)`)) %>%   
+  mutate(`Median (%)` = median(`Mean (%)`)) %>%
+  mutate(`SD (%)` = sd(`Mean (%)`)) %>%
+  mutate(`Min (%)` = min(`Mean (%)`)) %>% 
+  mutate(`Max (%)` = max(`Mean (%)`)) %>%
+  ungroup() %>% 
+  select(`Matrix`, `Size Fraction`, `Global Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  distinct() %>% 
+  arrange(`Matrix`,`Size Fraction`)
+
+kable(l, digits = 2, caption = "NileRed: Total Particle Recovery by Size Fraction. Summary statistics across all laboratories. Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+### Morphology
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10}
+
+#All Morphologies
+a <- Join_NileRed_Morphology %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, morphology_f, morphology_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, morphology_f) %>% 
+  mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, nilered_f, morphology_f, morphology_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=sampletype_f, y= morphology_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.7,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~morphology_f, ncol = 3, scales = "free")+
+  theme(text = element_text(size = 13),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, All Morphologies", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(a)
+
+
+#Fibers - By Lab
+b <- Join_NileRed_Morphology %>%
+  filter(plastic_f != "N") %>%
+  filter(morphology_f == "Fiber") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Creating plot
+  ggplot(aes(x=labid, y= morphology_pct_recovery)) +
+  theme_test() +
+  #No RSD data for fibers
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 2)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Particle Recovery, Fibers", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(b)
+
+#Fiber - Summary
+c <- Join_NileRed_Morphology %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, morphology_f, morphology_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, morphology_f) %>% 
+  mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
+  ungroup() %>% 
+  filter(morphology_f == "Fiber") %>%
+  group_by(sampletype_f, labid, nilered_f,morphology_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= morphology_pct_recovery_mean)) +
+  theme_test() +
+  #No RSD data for fibers
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 2)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, Fibers", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(c)
+
+#Spheres - By Lab
+d <- Join_NileRed_Morphology %>%
+  filter(plastic_f != "N") %>%
+  filter(morphology_f == "Sphere") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Creating plot
+  ggplot(aes(x=labid, y= morphology_pct_recovery)) +
+  theme_test() +
+  geom_rect(ymin = 98.2, ymax = 101.8, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 2)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Particle Recovery, Spheres", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(d)
+
+#Sphere - Summary
+e <- Join_NileRed_Morphology %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, morphology_f, morphology_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, morphology_f) %>% 
+  mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
+  ungroup() %>% 
+  filter(morphology_f == "Sphere") %>%
+  group_by(sampletype_f, labid, nilered_f,morphology_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= morphology_pct_recovery_mean)) +
+  theme_test() +
+  geom_rect(ymin = 98.2, ymax = 101.8, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 2)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, Sphere", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(e)
+
+#Fragments - By Lab
+f <- Join_NileRed_Morphology %>%
+  filter(plastic_f != "N") %>%
+  filter(morphology_f == "Fragment") %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%
+  #Creating plot
+  ggplot(aes(x=labid, y= morphology_pct_recovery)) +
+  theme_test() +
+  geom_rect(ymin = 93.6, ymax = 106.4, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 2)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "NileRed", subtitle = "Particle Recovery, Fragments", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(f)
+
+#Fragments - Summary
+g <- Join_NileRed_Morphology %>%
+  filter(plastic_f != "N") %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, nilered_f, morphology_f, morphology_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, morphology_f) %>% 
+  mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
+  ungroup() %>% 
+  filter(morphology_f == "Fragment") %>%
+  group_by(sampletype_f, labid, nilered_f,morphology_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= morphology_pct_recovery_mean)) +
+  theme_test() +
+  geom_rect(ymin = 93.6, ymax = 106.4, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = nilered_f, fill = nilered_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 2)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +   
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "NileRed", subtitle = "Particle Recovery, Fragments", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(g)
+
+#Morphology - By Sample
+h <- Join_NileRed_Morphology %>%
+  filter(plastic_f != "N") %>%
+  group_by(sampletype_f, labid, sampleid, morphology_f, morphology_pct_recovery) %>% 
+  summarise() %>%
+  rename("Matrix" = sampletype_f) %>% 
+  rename("Lab ID" = labid) %>%
+  rename("Sample ID" = sampleid) %>%
+  rename("Morphology" = morphology_f) %>%
+  rename("Recovery" = morphology_pct_recovery) %>%
+  distinct() 
+
+kable(h, digits = 2, caption = "NileRed: Total Particle Recovery by Size Fraction. Summary statistics by sample (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+#Morphology - By Lab
+i <- Join_NileRed_Morphology %>%
+  filter(plastic_f != "N") %>%
+  group_by(sampletype_f, labid, morphology_f) %>% 
+  mutate(`Mean (%)`= mean(morphology_pct_recovery)) %>%  
+  mutate(`Median (%)` = median(morphology_pct_recovery)) %>%
+  mutate(`SD (%)` = sd(morphology_pct_recovery)) %>%
+  mutate(`Min (%)` = min(morphology_pct_recovery)) %>% 
+  mutate(`Max (%)` = max(morphology_pct_recovery)) %>%
+  ungroup() %>% 
+  select(sampletype_f, labid, morphology_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  rename("Matrix" = sampletype_f) %>% 
+  rename("Lab ID" = labid) %>%
+  rename("Morphology" = morphology_f) %>%
+  distinct() 
+
+kable(i, digits = 2, caption = "NileRed: Total Particle Recovery by Morphology. Summary statistics by laboratory (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px") 
+
+#Morphology - Summary
+j <- Join_NileRed_Morphology %>%
+  filter(plastic_f != "N") %>%
+  group_by(sampletype_f, morphology_f) %>% 
+  mutate(`Mean (%)`= mean(morphology_pct_recovery)) %>%  
+  mutate(`Median (%)` = median(morphology_pct_recovery)) %>%
+  mutate(`SD (%)` = sd(morphology_pct_recovery)) %>%
+  mutate(`Min (%)` = min(morphology_pct_recovery)) %>% 
+  mutate(`Max (%)` = max(morphology_pct_recovery)) %>%
+  ungroup() %>% 
+  select(sampletype_f, morphology_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Morphology" = morphology_f) %>%
+  distinct() 
+
+kable(j, digits = 2, caption = "NileRed: Total Particle Recovery by Morphology. Summary statistics across all laboratories. Not blank corrected.")%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+```
+
+### Morphology within Size Fraction
+
+The following plots display the recovery (reported count/spiked count (%)) obtained from microscopy with nile red. **Reported particle characteristics must match expected particle characteristics of the spiking materials to count towards recovery estimations.** For example, the morphologies of polymer spiking materials are defined as spheres, fragments, and fibers. Morphologies outside of these definitions are currently excluded from analysis. 
+
+The dotted line is at 100% and the grey area represents the mean RSD for each given category. The data are **not** blank corrected.
+
+Recovery in this section is estimated based on color and morphology within a size fraction. For example, if the sample was spiked with 10 spheres >500 µm and 8 spheres were recovered in the >500 µm size fraction, recovery is estimated as 80%. However, if 4 of these spheres were reported as pellets rather than spheres, recovery would fall to 60%. 
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, results = 'asis'}
+
+#Make data frame of particle characteristics
+df <- Join_NileRed_Combo %>% 
+  filter(plastic_f == "Y") %>% 
+  group_by(sampletype_f, morphology_f, sizefraction_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df))
+
+{ #Open loop  
+  
+#By Lab
+a <- Join_NileRed_Combo %>%
+  filter(plastic_f != "N") %>%
+  group_by(labid, sampleid, sizefraction_f, morphology_f, morphology_sizefraction_pct_recovery) %>% 
+  filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
+  filter(morphology_f == df$morphology_f[[i]]) %>%
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%  
+  #Creating plot
+  ggplot(aes(x=labid, y= morphology_sizefraction_pct_recovery)) +
+  theme_test() +
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  facet_wrap(~sampletype_f, scales = "free")+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Recovery (%)", fill = "Experience", color = "Experience", title = "Nile Red", 
+       subtitle = paste(df$sizefraction_f[[i]], df$morphology_f[[i]]), 
+       caption = "Points represent individual samples spiked with microplastic particles.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(a)
+
+#Summary
+b <- Join_NileRed_Combo %>%
+  filter(plastic_f != "N") %>%
+  filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
+  filter(morphology_f == df$morphology_f[[i]]) %>%
+  group_by(labid) %>%
+  mutate(morphology_sizefraction_pct_recovery_mean = mean(morphology_sizefraction_pct_recovery)) %>%
+  ungroup() %>%
+  group_by(sampletype_f, labid, nilered_f, morphology_sizefraction_pct_recovery_mean) %>%
+  summarise() %>%  
+  #Creating plot
+  ggplot(aes(x=nilered_f, y= morphology_sizefraction_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = nilered_f, fill = nilered_f), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  geom_boxplot(alpha = 0.5,aes(color = nilered_f, fill = nilered_f), outlier.shape = NA) +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  facet_wrap(~sampletype_f, scales = "free")+
+  scale_color_manual(values = c("darkmagenta")) +
+  scale_fill_manual(values = c("darkmagenta")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", title = "Nile Red", 
+       subtitle = paste(df$sizefraction_f[[i]], df$morphology_f[[i]]),
+       caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents 100% recovery of polymer materials.\nNot blank corrected.")
+
+plot(b)
+ 
+#By Sample
+c <- Join_NileRed_Combo %>%
+  filter(plastic_f != "N") %>%
+  group_by(sampletype_f, labid, sizefraction_f, morphology_f) %>%
+  filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
+  filter(morphology_f == df$morphology_f[[i]]) %>%
+  ungroup() %>%
+  select(sampletype_f, labid, sampleid, morphology_sizefraction_pct_recovery) %>%
+  rename("Matrix" = sampletype_f) %>% 
+  rename("Lab ID" = labid) %>%
+  rename("Sample ID" = sampleid) %>%
+  rename("Recovery" = morphology_sizefraction_pct_recovery) %>%
+  distinct()
+
+print(kable(c, digits = 2, caption = paste(df$sizefraction_f[[i]], df$morphology_f[[i]])) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px"))
+  cat('\n')
+
+#By Lab
+d <- Join_NileRed_Combo %>%
+  filter(plastic_f != "N") %>%
+  group_by(sampletype_f, labid, sizefraction_f, morphology_f) %>%
+  filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
+  filter(morphology_f == df$morphology_f[[i]]) %>%
+  mutate(Mean = mean(morphology_sizefraction_pct_recovery)) %>%
+  mutate(Median = median(morphology_sizefraction_pct_recovery)) %>%
+  mutate(SD = sd(morphology_sizefraction_pct_recovery)) %>%
+  mutate(Min = min(morphology_sizefraction_pct_recovery)) %>%
+  mutate(Max = max(morphology_sizefraction_pct_recovery)) %>%
+  ungroup() %>%
+  select(sampletype_f, labid, Mean, Median, SD, Min, Max) %>%
+  rename("Matrix" = sampletype_f) %>% 
+  rename("Lab ID" = labid) %>%
+  rename("Mean (%)" = Mean) %>%
+  rename("Median (%)" = Median) %>%
+  rename("SD (%)" = SD) %>%
+  rename("Min (%)" = Min) %>%
+  rename("Max (%)" = Max) %>%
+  distinct()
+
+print(kable(d, digits = 2, caption = paste(df$sizefraction_f[[i]], df$morphology_f[[i]])) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px"))  
+  cat('\n')
+
+ } #Close loop
+
+```
+
+End of Analysis. 
