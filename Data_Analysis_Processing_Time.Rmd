@@ -1,0 +1,842 @@
+---
+title: "Microplastics Intercalibration Study Data Analysis: Processing Time"
+author: "Southern California Coastal Water Research Project, University of Toronto & State Water Resources Control Board of California"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: 
+    toc: true
+    toc_depth: 4
+    number_sections: true
+    toc_float: true
+---
+![](../www/logobanner.png)
+```{r Install Packages, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#### Packages ####
+library(tidyverse)#A ton of useful functions
+library(knitr) #Needed to display table
+library(kableExtra)#data tables
+
+```
+
+```{r Data Import, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+Results <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_results_master", guess_max = 100000) #Raw data file
+
+Lab_Info <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_labinformation", guess_max = 100000) #Import .csv file containing all lab information for clean water
+
+Extraction <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_sampleextraction", guess_max = 100000) #Raw data file for other matrices
+
+Microscopy <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_microscopysettings", guess_max = 100000) #Raw data file for other matrices
+
+NileRed <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_nileredsettings", guess_max = 100000) #Raw data file for other matrices
+
+FTIR <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_ftirsettings", guess_max = 100000) #Raw data file for other matrices
+
+Raman <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_ramansettings", guess_max = 100000) #Raw data file for other matrices
+
+```
+
+```{r Data Tidying - Extraction, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#Remove "Lab" from relevant columns in other matrices data frame
+Lab_Info$labid <- gsub("Lab","",as.character(Lab_Info$labid))
+Extraction$labid <- gsub("Lab","",as.character(Extraction$labid))
+Extraction$sampleid <- gsub("Lab","",as.character(Extraction$sampleid))
+
+#Select data relating to expertise for visual microscopy
+Expertise <- Lab_Info %>%
+  select(labid, expertiseextraction, expertisevisualmicroscopy, expertisenilered, expertiseftir, expertiseraman, expertisepy_gcms)
+
+#Join expertise data to results data frame
+Extraction <- Extraction %>% 
+   left_join(Expertise, by = c("labid" = "labid"))
+
+Time_Extraction_Sample <- Extraction %>%
+  #drop labs F, D, T and WW from clean water samples
+  filter(!(labid == "F" & matrix == "CW")) %>% 
+  filter(!(labid == "D" & matrix == "CW")) %>%
+  filter(!(labid == "T" & matrix == "CW")) %>%
+  #Exclude sediment augmentation data
+  filter(!(labid %in% c("R","D") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>%
+  #Exclude second set from lab N
+  filter(!(labid == "N" & grepl("5|6|7|8", sampleid) & matrix == "CW")) %>%
+  #drop blank samples
+  mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>% 
+  filter(blank == "N") %>% 
+  #drop where time isn't reported
+  filter(time != -88) %>% 
+  group_by(sampleid) %>% 
+  mutate(time_sample = sum(time)) %>% 
+  ungroup()
+  
+Time_Extraction_Lab <- Time_Extraction_Sample %>% 
+  ungroup() %>% 
+  group_by(matrix, labid, time_sample, expertiseextraction) %>%
+  summarise() %>% 
+  ungroup() %>% 
+  group_by(matrix, labid) %>% 
+  mutate(time_lab = mean(time_sample)) %>% 
+  ungroup() %>% 
+  mutate(matrix = case_when(
+    matrix == "CW" ~ "Clean Water",
+    matrix == "FT" ~ "Fish Tissue",
+    matrix == "SD" ~ "Sediment",
+    matrix == "DW" ~ "Dirty Water"))
+
+```
+
+```{r Data Tidying - Microscopy,  echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#Remove "Lab" from relevant columns in other matrices data frame
+Microscopy$labid <- gsub("Lab","",as.character(Microscopy$labid))
+Microscopy$sampleid <- gsub("Lab","",as.character(Microscopy$sampleid))
+
+#Assign matrices to sampleids
+Microscopy <- Microscopy %>% 
+  mutate(matrix = case_when(grepl("CW", sampleid) ~ "CW",
+                            grepl("DW", sampleid) ~ "DW",
+                            grepl("FT", sampleid) ~ "FT",
+                            grepl("SD", sampleid) ~ "SD"))
+
+#Join expertise data to results data frame
+Microscopy <- Microscopy %>% 
+   left_join(Expertise, by = c("labid" = "labid"))
+
+Time_Microscopy_Sample <- Microscopy %>%
+  #drop labs F, D, T and WW from clean water samples
+  filter(!(labid == "F" & matrix == "CW")) %>% 
+  filter(!(labid == "D" & matrix == "CW")) %>%
+  filter(!(labid == "T" & matrix == "CW")) %>%
+  #Exclude sediment augmentation data
+  filter(!(labid %in% c("R","D") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>%
+  #Exclude second set from lab N
+  filter(!(labid == "N" & grepl("5|6|7|8", sampleid) & matrix == "CW")) %>%
+  #Exclude augmentation data
+  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>% 
+  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & matrix %in% c("FT"))) %>% 
+  #drop blank samples
+  mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>% 
+  filter(blank == "N") %>% 
+  #drop where time isn't reported
+  filter(time != -88) %>%
+  group_by(sampleid) %>% 
+  mutate(time_sample = sum(time))
+
+Time_Microscopy_Lab <- Time_Microscopy_Sample %>% 
+  ungroup() %>% 
+  group_by(matrix, labid, time_sample, expertisevisualmicroscopy) %>%
+  summarise() %>% 
+  ungroup() %>% 
+  group_by(matrix, labid) %>% 
+  mutate(time_lab = mean(time_sample)) %>% 
+  ungroup() %>% 
+  mutate(matrix = case_when(
+    matrix == "CW" ~ "Clean Water",
+    matrix == "FT" ~ "Fish Tissue",
+    matrix == "SD" ~ "Sediment",
+    matrix == "DW" ~ "Dirty Water"))
+
+```
+
+```{r Data Tidying - NileRed,  echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#Remove "Lab" from relevant columns in other matrices data frame
+NileRed$labid <- gsub("Lab","",as.character(NileRed$labid))
+NileRed$sampleid <- gsub("Lab","",as.character(NileRed$sampleid))
+
+#Assign matrices to sampleids
+NileRed <- NileRed %>% 
+  mutate(matrix = case_when(grepl("CW", sampleid) ~ "CW",
+                            grepl("DW", sampleid) ~ "DW",
+                            grepl("FT", sampleid) ~ "FT",
+                            grepl("SD", sampleid) ~ "SD"))
+
+#Join expertise data to results data frame
+NileRed <- NileRed %>% 
+   left_join(Expertise, by = c("labid" = "labid"))
+
+Time_NileRed_Sample <- NileRed %>%
+  #remove fake lab 
+  filter(labid != "ACME") %>% 
+  #drop labs F, D, T and WW from clean water samples
+  filter(!(labid == "F" & matrix == "CW")) %>% 
+  filter(!(labid == "D" & matrix == "CW")) %>%
+  filter(!(labid == "T" & matrix == "CW")) %>%
+  #Exclude sediment augmentation data
+  filter(!(labid %in% c("R","D") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>%
+  #Exclude second set from lab N
+  filter(!(labid == "N" & grepl("5|6|7|8", sampleid) & matrix == "CW")) %>%
+  #Exclude augmentation data
+  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>% 
+  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & matrix %in% c("FT"))) %>% 
+  #drop blank samples
+  mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>% 
+  filter(blank == "N") %>% 
+  #drop where time isn't reported
+  filter(time != -88) %>% 
+  group_by(sampleid) %>% 
+  mutate(time_sample = sum(time)) 
+
+Time_NileRed_Lab <- Time_NileRed_Sample %>%
+  ungroup() %>% 
+  group_by(matrix, labid, time_sample, expertisenilered) %>%
+  summarise() %>% 
+  ungroup() %>% 
+  group_by(matrix, labid) %>% 
+  mutate(time_lab = mean(time_sample)) %>% 
+  ungroup() %>% 
+  mutate(matrix = case_when(
+    matrix == "CW" ~ "Clean Water",
+    matrix == "FT" ~ "Fish Tissue",
+    matrix == "SD" ~ "Sediment",
+    matrix == "DW" ~ "Dirty Water"))
+
+```
+
+```{r Data Tidying - FTIR,  echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#Remove "Lab" from relevant columns in other matrices data frame
+FTIR$labid <- gsub("Lab","",as.character(FTIR$labid))
+FTIR$sampleid <- gsub("Lab","",as.character(FTIR$sampleid))
+
+#Assign matrices to sampleids
+FTIR <- FTIR %>% 
+  mutate(matrix = case_when(grepl("CW", sampleid) ~ "CW",
+                            grepl("DW", sampleid) ~ "DW",
+                            grepl("FT", sampleid) ~ "FT",
+                            grepl("SD", sampleid) ~ "SD"))
+
+#Join expertise data to results data frame
+FTIR <- FTIR %>% 
+   left_join(Expertise, by = c("labid" = "labid"))
+
+Time_FTIR_Sample <- FTIR %>%
+  #remove fake lab 
+  filter(labid != "ACME") %>%
+  #drop labs F, D, T and WW from clean water samples
+  filter(!(labid == "F" & matrix == "CW")) %>% 
+  filter(!(labid == "D" & matrix == "CW")) %>%
+  filter(!(labid == "T" & matrix == "CW")) %>%
+  #Exclude sediment augmentation data
+  filter(!(labid %in% c("R","D") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>%
+  #Exclude second set from lab N
+  filter(!(labid == "N" & grepl("5|6|7|8", sampleid) & matrix == "CW")) %>%
+  #Exclude augmentation data
+  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>% 
+  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & matrix %in% c("FT"))) %>% 
+  #drop blank samples
+  mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>% 
+  filter(blank == "N") %>%
+  # Where labs have entered 0 for time, this is assumed that time was not recorded
+  mutate(time = na_if(time, "0")) %>% 
+  #drop where time isn't reported
+  filter(time != -88) %>%
+  drop_na(time) %>%
+  group_by(sampleid) %>% 
+  mutate(time_sample = sum(time))  
+  
+Time_FTIR_Lab <- Time_FTIR_Sample %>% 
+  ungroup() %>% 
+  group_by(matrix, labid, time_sample, expertiseftir) %>%
+  summarise() %>% 
+  ungroup() %>% 
+  group_by(matrix, labid) %>% 
+  mutate(time_lab = mean(time_sample)) %>% 
+  ungroup() %>% 
+  mutate(matrix = case_when(
+    matrix == "CW" ~ "Clean Water",
+    matrix == "FT" ~ "Fish Tissue",
+    matrix == "SD" ~ "Sediment",
+    matrix == "DW" ~ "Dirty Water"))
+
+```
+
+```{r Data Tidying - Raman,  echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#Remove "Lab" from relevant columns in other matrices data frame
+Raman$labid <- gsub("Lab","",as.character(Raman$labid))
+Raman$sampleid <- gsub("Lab","",as.character(Raman$sampleid))
+
+#Assign matrices to sampleids
+Raman <- Raman %>% 
+  mutate(matrix = case_when(grepl("CW", sampleid) ~ "CW",
+                            grepl("DW", sampleid) ~ "DW",
+                            grepl("FT", sampleid) ~ "FT",
+                            grepl("SD", sampleid) ~ "SD"))
+
+#Join expertise data to results data frame
+Raman <- Raman %>% 
+   left_join(Expertise, by = c("labid" = "labid"))
+
+Time_Raman_Sample <- Raman %>%
+  #remove fake lab 
+  filter(labid != "ACME") %>%
+  #drop labs F, D, T and WW from clean water samples
+  filter(!(labid == "F" & matrix == "CW")) %>% 
+  filter(!(labid == "D" & matrix == "CW")) %>%
+  filter(!(labid == "T" & matrix == "CW")) %>%
+  #Exclude sediment augmentation data
+  filter(!(labid %in% c("R","D") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>%
+  #Exclude second set from lab N
+  filter(!(labid == "N" & grepl("5|6|7|8", sampleid) & matrix == "CW")) %>%
+  #Exclude augmentation data
+  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>% 
+  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & matrix %in% c("FT"))) %>% 
+  #drop blank samples
+  mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>% 
+  filter(blank == "N") %>% 
+  #drop where time isn't reported
+  filter(time != -88) %>% 
+  
+  group_by(sampleid) %>% 
+  mutate(time_sample = sum(time)) 
+
+Time_Raman_Lab <- Time_Raman_Sample %>%
+  ungroup() %>% 
+  group_by(matrix, labid, time_sample, expertiseraman) %>%
+  summarise() %>% 
+  ungroup() %>% 
+  group_by(matrix, labid) %>% 
+  mutate(time_lab = mean(time_sample)) %>% 
+  ungroup() %>% 
+  mutate(matrix = case_when(
+    matrix == "CW" ~ "Clean Water",
+    matrix == "FT" ~ "Fish Tissue",
+    matrix == "SD" ~ "Sediment",
+    matrix == "DW" ~ "Dirty Water"))
+
+```
+
+```{r Data Tidying - Images and measurements, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#Tidying of microscopy and nile red data to ensure proper merge
+Results <- Results %>% 
+  #drop labs F, D, T and WW from clean water samples
+  filter(!(labid == "F" & sampletype == "CW")) %>% 
+  filter(!(labid == "D" & sampletype == "CW")) %>%
+  filter(!(labid == "T" & sampletype == "CW")) %>%
+  #Exclude sediment augmentation data
+  filter(!(labid %in% c("R","D") & grepl("5|6|7|8", sampleid) & sampletype %in% c("SD"))) %>%
+  #Exclude second set from lab N
+  filter(!(labid == "N" & grepl("5|6|7|8", sampleid) & sampletype == "CW")) %>%
+  #Exclude augmentation data
+  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & sampletype %in% c("SD"))) %>% 
+  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & sampletype %in% c("FT"))) 
+
+#Select expertise data for clean water
+Expertise <- Lab_Info %>%
+  select(labid, expertiseextraction, expertisevisualmicroscopy, expertisenilered, expertiseftir, expertiseraman, expertisepy_gcms)
+
+#Join expertise data to results data frame
+Results <- Results %>% 
+   left_join(Expertise, by = c("labid" = "labid"))
+
+```
+
+```{r Measurements Tidying, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+Measurement_Time <- Results %>%
+  filter(!grepl("4", sampleid)) %>% #Remove results for blanks
+  filter(!grepl("8", sampleid)) %>% #Remove results for blanks
+  mutate(timeimagesmeasurements = na_if(timeimagesmeasurements, "0")) %>% # Where labs have entered 0 for time, this is assumed that time was not recorded
+  filter(!grepl("-88", timeimagesmeasurements)) %>%
+  filter(!grepl("88", timeimagesmeasurements)) %>%
+  drop_na(timeimagesmeasurements) 
+
+Measurement_Time_Sample <- Measurement_Time %>%
+  #By Sample
+  group_by(sampletype, labid, sampleid, sizefraction) %>%
+  #Time per size fraction per sample
+  summarise(time_sizefraction = mean(timeimagesmeasurements)) %>% #Time per sizefraction
+  ungroup() %>% 
+  #Time per sample
+  group_by(sampletype, labid, sampleid) %>%
+  mutate(time_sample = sum(time_sizefraction)) %>%
+  ungroup() %>%
+  #By Lab - Mean of time per sample
+  group_by(sampletype, labid) %>% #The only difference from above is that I don't group by sample
+  mutate(time_lab = mean(time_sample)) %>%  # Mean time per lab for 1 sample
+  mutate(matrix = case_when(
+    sampletype == "CW" ~ "Clean Water",
+    sampletype == "FT" ~ "Fish Tissue",
+    sampletype == "SD" ~ "Sediment",
+    sampletype == "DW" ~ "Dirty Water")) %>% 
+  subset(select = -c(sampletype))
+  
+Measurement_Time_Lab <- Measurement_Time_Sample %>%   
+  ungroup()%>%
+  group_by(matrix, labid, time_lab) %>%
+  summarise()%>%
+  ungroup() %>%
+  group_by(matrix) %>% 
+  mutate(mean = mean(time_lab)) %>% #Mean across all labs
+  mutate(sd = sd(time_lab))   #SD across all labs
+
+```
+
+# Extraction Time
+
+```{r Extraction Time, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 10}
+
+a <- Time_Extraction_Sample %>% 
+  ggplot(aes(x = labid, y = time_sample)) +
+  theme_test() +
+  geom_point(aes(color = as.factor(expertiseextraction), fill = as.factor(expertiseextraction)), alpha = 0.7, width = .05, size = 3) +
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  expand_limits(y = 0) +
+  facet_wrap(~matrix) +
+  labs(x = "Labs", y = "Hours", fill = "Experience", color = "Experience", title = "Sample Extraction Time", caption = "Points represent individual samples spiked with microplastic particles.")
+
+a
+
+b <- Time_Extraction_Sample %>% 
+  group_by(matrix, labid, sampleid, time_sample) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Lab ID" = labid, "Sample ID" = sampleid, "Time (hours)" = time_sample)
+  
+kable(b, digits = 2, caption = "Extraction Time per Sample") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+c <- Time_Extraction_Lab %>% 
+  ggplot(aes(x = matrix, y = time_lab)) +
+  theme_test() +
+  geom_boxplot(alpha = 0.5,aes(color = matrix, fill = matrix), outlier.shape = NA) +
+  geom_point(aes(color = matrix, fill = matrix, alpha = 0.7), width = .05, size = 3) +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  scale_color_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  expand_limits(y = 0) +
+  labs(x = "Matrix", y = "Hours", title = "Sample Extraction Time", caption = "Points represent the mean sample extraction time from individual labs.")
+
+c
+
+d <- Time_Extraction_Lab %>% 
+  group_by(matrix, labid, time_lab) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Lab ID" = labid, "Time (hours)" = time_lab)
+  
+kable(d, digits = 2, caption = "Mean Extraction Time per Lab") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+e <- Time_Extraction_Lab %>% 
+  group_by(matrix, labid, time_lab) %>% 
+  summarise() %>%   
+  ungroup() %>% 
+  group_by(matrix) %>% 
+  mutate(mean = mean(time_lab)) %>%
+  mutate(sd = sd(time_lab)) %>%
+  mutate(n = n_distinct(labid)) %>% 
+  ungroup() %>% 
+  group_by(matrix, mean, sd, n) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
+  
+kable(e, digits = 2, caption = "Mean Extraction Time by Matrix") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+# Microscopy Time
+
+```{r Microscopy Time, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 10}
+
+a <- Time_Microscopy_Sample %>% 
+  ggplot(aes(x = labid, y = time_sample)) +
+  theme_test() +
+  geom_point(aes(color = as.factor(expertisevisualmicroscopy), fill = as.factor(expertisevisualmicroscopy)), alpha = 0.7, width = .05, size = 3) +
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  expand_limits(y = 0) +
+  facet_wrap(~matrix) +
+  labs(x = "Labs", y = "Hours", fill = "Experience", color = "Experience", title = "Microscopy Time", caption = "Points represent individual samples spiked with microplastic particles.")
+
+a
+
+b <- Time_Microscopy_Sample %>% 
+  group_by(matrix, labid, sampleid, time_sample) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Lab ID" = labid, "Sample ID" = sampleid, "Time (hours)" = time_sample)
+  
+kable(b, digits = 2, caption = "Microscopy Time per Sample") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+c <- Time_Microscopy_Lab %>% 
+  ggplot(aes(x = matrix, y = time_lab)) +
+  theme_test() +
+  geom_boxplot(alpha = 0.5,aes(color = matrix, fill = matrix), outlier.shape = NA) +
+  geom_point(aes(color = matrix, fill = matrix, alpha = 0.7), width = .05, size = 3) +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  scale_color_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  expand_limits(y = 0) +
+  labs(x = "Matrix", y = "Hours", title = "Microscopy Time", caption = "Points represent the mean sample extraction time from individual labs.")
+
+c
+
+d <- Time_Microscopy_Lab %>% 
+  group_by(matrix, labid, time_lab) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Lab ID" = labid, "Time (hours)" = time_lab)
+  
+kable(d, digits = 2, caption = "Mean Microscopy Time per Lab") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+e <- Time_Microscopy_Lab %>% 
+  group_by(matrix, labid, time_lab) %>% 
+  summarise() %>% 
+  ungroup() %>% 
+  group_by(matrix) %>% 
+  mutate(mean = mean(time_lab)) %>%
+  mutate(sd = sd(time_lab)) %>%
+  mutate(n = n_distinct(labid)) %>% 
+  ungroup() %>% 
+  group_by(matrix, mean, sd, n) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
+  
+kable(e, digits = 2, caption = "Mean Microscopy by Matrix") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+# Nile Red Time
+
+```{r NileRed Time, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 10}
+
+a <- Time_NileRed_Sample %>% 
+  ggplot(aes(x = labid, y = time_sample)) +
+  theme_test() +
+  geom_point(aes(color = as.factor(expertisenilered), fill = as.factor(expertisenilered)), alpha = 0.7, width = .05, size = 3) +
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  expand_limits(y = 0) +
+  facet_wrap(~matrix) +
+  labs(x = "Labs", y = "Hours", fill = "Experience", color = "Experience", title = "Nile Red Time", caption = "Points represent individual samples spiked with microplastic particles.")
+
+a
+
+b <- Time_NileRed_Sample %>% 
+  group_by(matrix, labid, sampleid, time_sample) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Lab ID" = labid, "Sample ID" = sampleid, "Time (hours)" = time_sample)
+  
+kable(b, digits = 2, caption = "Nile Red Time per Sample") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+c <- Time_NileRed_Lab %>% 
+  ggplot(aes(x = matrix, y = time_lab)) +
+  theme_test() +
+  geom_boxplot(alpha = 0.5,aes(color = matrix, fill = matrix), outlier.shape = NA) +
+  geom_point(aes(color = matrix, fill = matrix, alpha = 0.7), width = .05, size = 3) +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  scale_color_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  expand_limits(y = 0) +
+  labs(x = "Matrix", y = "Hours", title = "Nile Red Time", caption = "Points represent the mean sample extraction time from individual labs.")
+
+c
+
+d <- Time_NileRed_Lab %>% 
+  group_by(matrix, labid, time_lab) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Lab ID" = labid, "Time (hours)" = time_lab)
+  
+kable(d, digits = 2, caption = "Mean Nile Red Time per Lab") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+e <- Time_NileRed_Lab %>% 
+  group_by(matrix, labid, time_lab) %>% 
+  summarise() %>% 
+  ungroup() %>% 
+  group_by(matrix) %>% 
+  mutate(mean = mean(time_lab)) %>%
+  mutate(sd = sd(time_lab)) %>%
+  mutate(n = n_distinct(labid)) %>% 
+  ungroup() %>% 
+  group_by(matrix, mean, sd, n) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
+  
+kable(e, digits = 2, caption = "Mean Nile Red by Matrix") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+# FTIR Time
+
+```{r FTIR Time, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 10}
+
+a <- Time_FTIR_Sample %>% 
+  ggplot(aes(x = labid, y = time_sample)) +
+  theme_test() +
+  geom_point(aes(color = as.factor(expertiseftir), fill = as.factor(expertiseftir)), alpha = 0.7, width = .05, size = 3) +
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  expand_limits(y = 0) +
+  facet_wrap(~matrix) +
+  labs(x = "Labs", y = "Hours", fill = "Experience", color = "Experience", title = "FTIR Time", caption = "Points represent individual samples spiked with microplastic particles.")
+
+a
+
+b <- Time_FTIR_Sample %>% 
+  group_by(matrix, labid, sampleid, time_sample) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Lab ID" = labid, "Sample ID" = sampleid, "Time (hours)" = time_sample)
+  
+kable(b, digits = 2, caption = "FTIR Time per Sample") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+c <- Time_FTIR_Lab %>% 
+  ggplot(aes(x = matrix, y = time_lab)) +
+  theme_test() +
+  geom_boxplot(alpha = 0.5,aes(color = matrix, fill = matrix), outlier.shape = NA) +
+  geom_point(aes(color = matrix, fill = matrix, alpha = 0.7), width = .05, size = 3) +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  scale_color_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  expand_limits(y = 0) +
+  labs(x = "Matrix", y = "Hours", title = "FTIR Time", caption = "Points represent the mean sample extraction time from individual labs.")
+
+c
+
+d <- Time_FTIR_Lab %>% 
+  group_by(matrix, labid, time_lab) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Lab ID" = labid, "Time (hours)" = time_lab)
+  
+kable(d, digits = 2, caption = "Mean FTIR Time per Lab") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+e <- Time_FTIR_Lab %>% 
+  group_by(matrix, labid, time_lab) %>% 
+  summarise() %>% 
+  ungroup() %>% 
+  group_by(matrix) %>% 
+  mutate(mean = mean(time_lab)) %>%
+  mutate(sd = sd(time_lab)) %>%
+  mutate(n = n_distinct(labid)) %>% 
+  ungroup() %>% 
+  group_by(matrix, mean, sd, n) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
+  
+kable(e, digits = 2, caption = "Mean FTIR by Matrix") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+# Raman Time
+
+```{r Raman Time, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 10}
+
+a <- Time_Raman_Sample %>% 
+  ggplot(aes(x = labid, y = time_sample)) +
+  theme_test() +
+  geom_point(aes(color = as.factor(expertiseraman), fill = as.factor(expertiseraman)), alpha = 0.7, width = .05, size = 3) +
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue"))+
+  expand_limits(y = 0) +
+  facet_wrap(~matrix) +
+  labs(x = "Labs", y = "Hours", fill = "Experience", color = "Experience", title = "Raman Time", caption = "Points represent individual samples spiked with microplastic particles.")
+
+a
+
+b <- Time_Raman_Sample %>% 
+  group_by(matrix, labid, sampleid, time_sample) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Lab ID" = labid, "Sample ID" = sampleid, "Time (hours)" = time_sample)
+  
+kable(b, digits = 2, caption = "Raman Time per Sample") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+c <- Time_Raman_Lab %>% 
+  ggplot(aes(x = matrix, y = time_lab)) +
+  theme_test() +
+  geom_boxplot(alpha = 0.5,aes(color = matrix, fill = matrix), outlier.shape = NA) +
+  geom_point(aes(color = matrix, fill = matrix, alpha = 0.7), width = .05, size = 3) +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  scale_color_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  expand_limits(y = 0) +
+  labs(x = "Matrix", y = "Hours", title = "Raman Time", caption = "Points represent the mean sample extraction time from individual labs.")
+
+c
+
+d <- Time_Raman_Lab %>% 
+  group_by(matrix, labid, time_lab) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Lab ID" = labid, "Time (hours)" = time_lab)
+  
+kable(d, digits = 2, caption = "Mean Raman Time per Lab") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+e <- Time_Raman_Lab %>% 
+  group_by(matrix, labid, time_lab) %>% 
+  summarise() %>% 
+  ungroup() %>% 
+  group_by(matrix) %>% 
+  mutate(mean = mean(time_lab)) %>%
+  mutate(sd = sd(time_lab)) %>%
+  mutate(n = n_distinct(labid)) %>% 
+  ungroup() %>% 
+  group_by(matrix, mean, sd, n) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
+  
+kable(e, digits = 2, caption = "Mean Raman by Matrix") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+# Images and measurements
+
+```{r Images and measurements, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 10}
+
+a <- Measurement_Time_Sample %>% 
+  ggplot(aes(x = labid, y = time_sample)) +
+  theme_test() +
+  geom_point(aes(color = matrix, fill = matrix, alpha = 0.7), width = .05, size = 3) +
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  scale_color_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  expand_limits(y = 0) +
+  facet_wrap(~matrix) +
+  labs(x = "Labs", y = "Hours", fill = "Experience", color = "Experience", title = "Images and Measurements Time", caption = "Points represent individual samples spiked with microplastic particles.")
+
+a
+
+b <- Measurement_Time_Sample %>% 
+  group_by(matrix, labid, sampleid, time_sample) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Lab ID" = labid, "Sample ID" = sampleid, "Time (hours)" = time_sample)
+  
+kable(b, digits = 2, caption = "Images and Measurements Time") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+c <- Measurement_Time_Lab %>% 
+  ggplot(aes(x = matrix, y = time_lab)) +
+  theme_test() +
+  geom_boxplot(alpha = 0.5,aes(color = matrix, fill = matrix), outlier.shape = NA) +
+  geom_point(aes(color = matrix, fill = matrix, alpha = 0.7), width = .05, size = 3) +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  scale_color_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"))+
+  expand_limits(y = 0) +
+  labs(x = "Matrix", y = "Hours", title = "Images and Measurements Time", caption = "Points represent the mean sample extraction time from individual labs.")
+
+c
+
+d <- Measurement_Time_Lab %>% 
+  group_by(matrix, labid, time_lab) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Lab ID" = labid, "Time (hours)" = time_lab)
+  
+kable(d, digits = 2, caption = "Mean Images and Measurements per Lab") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+e <- Measurement_Time_Lab %>% 
+  ungroup() %>% 
+  group_by(matrix) %>% 
+  mutate(n = n_distinct(labid)) %>% 
+  ungroup() %>% 
+  group_by(matrix, mean, sd, n) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
+  
+kable(e, digits = 2, caption = "Mean Images and Measurements by Matrix") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+End of Analysis. 

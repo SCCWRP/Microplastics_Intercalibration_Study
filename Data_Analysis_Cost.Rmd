@@ -1,0 +1,279 @@
+---
+title: "Microplastics Intercalibration Study Data Analysis: Cost"
+author: "Southern California Coastal Water Research Project, University of Toronto & State Water Resources Control Board of California"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: 
+    toc: true
+    toc_depth: 4
+    number_sections: true
+    toc_float: true
+---
+![](../www/logobanner.png)
+
+```{r Install Packages, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#### Packages ####
+library(tidyverse)#A ton of useful functions
+library(ggbeeswarm) #Beeswarm plots
+library(knitr) #Needed to display table
+library(kableExtra) #Needed for table features (i.e., scroll_box)
+
+```
+
+```{r Import Data, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+Cost <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_costresults", guess_max = 100000) #Raw data file for other matrices
+
+```
+
+```{r Data Cleaning and Filtering, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+Cost_Clean <- Cost %>%
+  filter(!grepl("Other", instrumenttype))%>%  # Remove instrument named 'other' so we are just comparing the 5 main instruments
+  filter(!grepl("99", objectid))%>% # Remove lab that has -88 for both instrument and consumables cost
+  filter(!grepl("123", objectid))%>% # Remove lab that has -88 for both instrument and consumables cost
+  mutate(instrumentcost = na_if(instrumentcost, "-88")) %>% # Change all non-results to NA
+  mutate(instrumentcost = na_if(instrumentcost, "0")) %>%
+  mutate(consumables = na_if(consumables, "-88")) %>%
+  mutate(consumables = na_if(consumables, "0")) %>%
+  mutate(instrumenttype = case_when( # Re-name instruments
+    instrumenttype == "FTIR" ~ "FTIR",
+    instrumenttype == "ATR-FTIR" ~ "FTIR",
+    instrumenttype == "FPA-FTIR" ~ "FTIR",
+    instrumenttype == "PyroGCMS" ~ "Py-GCMS",
+    instrumenttype == "Raman" ~ "Raman",
+    instrumenttype == "Stereoscope" ~ "Stereoscope",
+    instrumenttype == "StereoscopewithFluorescenceStaining" ~ "Fluorescent Stereoscope")) %>% 
+  #Rename and create factor for sample type
+  mutate(matrix = case_when(
+    matrix == "CW" ~ "Clean Water",
+    matrix == "FT" ~ "Fish Tissue",
+    matrix == "SD" ~ "Sediment",
+    matrix == "DW" ~ "Dirty Water")) %>% 
+  mutate(matrix_f = as.factor(matrix)) 
+```
+
+# Instrument
+
+```{r Instrument Cost, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE}
+
+Cost_Clean_1 <- Cost_Clean %>% drop_na(instrumentcost)
+
+Cost_Instrument <- Cost_Clean_1 %>% 
+  ggplot(aes(x=instrumenttype, y=instrumentcost)) +
+  theme_test() +
+  geom_beeswarm(aes(color = instrumenttype, fill = instrumenttype), alpha = 0.7, size = 2, groupOnX = TRUE) +
+  geom_boxplot(alpha = 0.5, aes(color = instrumenttype, fill = instrumenttype))+
+  ylab("Instrument Cost (USD)")+ xlab("Instrument Type")+
+  scale_x_discrete(limits = c("Stereoscope", "FTIR", "Raman"))+
+  scale_y_continuous( limits=c(0, 400000), labels = scales::number_format(accuracy = 1))+
+  scale_fill_brewer(palette = "Set1") +
+  scale_color_brewer(palette = "Set1") +
+  facet_wrap(~matrix_f)+
+  theme(text = element_text(size = 12), 
+        plot.title = element_text(hjust = 0.5), 
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45 , hjust = 1, vjust = 1),
+        axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)))
+
+Cost_Instrument
+
+Table1 <- Cost_Clean_1 %>% 
+  #Calculate SD 
+  group_by(instrumenttype, matrix_f) %>% 
+  mutate(SD = sd (instrumentcost)) %>% 
+  mutate(Mean = mean(instrumentcost)) %>%
+  ungroup() %>%
+  group_by(matrix_f, instrumenttype, instrumentcost, Mean, SD) %>%
+  summarise() %>%
+  rename("Matrix" = matrix_f) %>% 
+  rename("Instrument" = instrumenttype) %>%
+  rename("Cost" = instrumentcost)
+
+ kable(Table1, digits = 0, caption = "Instrument Cost (USD). Summary statistics.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "400px")
+
+```
+
+# Consumables
+
+```{r Consumables Cost, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE}
+
+Cost_Consumables <- Cost_Clean %>% 
+  ggplot(aes(x=instrumenttype, y=consumables)) +
+  theme_test() +
+  geom_beeswarm(aes(color = instrumenttype, fill = instrumenttype), alpha = 0.7, size = 2, groupOnX = TRUE) +
+  geom_boxplot(alpha = 0.5,aes(color = instrumenttype, fill = instrumenttype))+
+  ylab("Consumables Cost (USD)")+ xlab("Instrument Type")+
+  scale_x_discrete(limits = c("Stereoscope", "FTIR", "Raman"))+
+  scale_y_continuous(limits =c(0,12000))+
+  scale_fill_brewer(palette = "Set1") +
+  scale_color_brewer(palette = "Set1") +
+  facet_wrap(~matrix_f)+
+  theme(text = element_text(size = 12), 
+        plot.title = element_text(hjust = 0.5), 
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45 , hjust = 1, vjust = 1),
+        axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)))
+
+Cost_Consumables
+
+Cost_Clean_2 <- Cost_Clean %>% drop_na(consumables)
+
+
+Table2 <- Cost_Clean_2 %>% 
+  #Calculate SD 
+  group_by(instrumenttype, matrix_f) %>% 
+  mutate(SD = sd (consumables)) %>% 
+  mutate(Mean = mean(consumables)) %>%
+  ungroup() %>%
+  group_by(matrix_f, instrumenttype, consumables, Mean, SD) %>%
+  summarise() %>%
+  rename("Matrix" = matrix_f) %>%
+  rename("Instrument" = instrumenttype) %>%
+  rename("Cost" = consumables)
+  
+
+ kable(Table2, digits = 0, caption = "Consumables Cost (USD). Summary statistics.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "400px")
+```
+
+# Stereoscope
+
+```{r Stereoscope Cost, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE}
+#Instrument
+Stereoscope <- Cost_Clean %>%
+  filter(instrumenttype == "Stereoscope") %>%
+  drop_na(instrumentcost)
+
+Summary_S <- Stereoscope %>%
+  ungroup() %>% 
+  group_by(matrix_f) %>% 
+  mutate(Mean = mean(instrumentcost)) %>%
+  mutate(SD = sd (instrumentcost)) %>% 
+  ungroup() %>%
+  group_by(matrix_f, instrumenttype, Mean, SD) %>%
+  summarise() %>% 
+  rename("Matrix" = matrix_f) %>%
+  rename("Instrument" = instrumenttype)
+
+ kable(Summary_S, digits = 0, caption = "Instrument Cost (USD). Summary statistics.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "400px")
+
+#Consumables 
+ Stereoscope_C <- Cost_Clean %>%
+  filter(instrumenttype == "Stereoscope") %>%
+  drop_na(consumables)
+ 
+ Summary_SC <- Stereoscope_C %>% 
+  ungroup() %>% 
+  group_by(matrix_f) %>% 
+  mutate(Mean = mean(consumables)) %>%
+  mutate(SD = sd (consumables)) %>% 
+  ungroup() %>%
+  group_by(matrix_f, instrumenttype, Mean, SD) %>%
+  summarise() %>% 
+  rename("Matrix" = matrix_f) %>%
+  rename("Instrument" = instrumenttype) 
+
+ kable(Summary_SC, digits = 0, caption = "Consumables Cost (USD). Summary statistics.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "400px")
+ 
+```
+
+# FTIR
+
+```{r FTIR Cost, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE}
+#Instrument
+FTIR <- Cost_Clean %>%
+  filter(instrumenttype == "FTIR") %>%
+  filter(labid != "A")%>%
+  drop_na(instrumentcost)
+
+Summary_F <- FTIR %>% 
+  ungroup() %>% 
+  group_by(matrix_f) %>%
+  mutate(Mean = mean(instrumentcost)) %>%
+  mutate(SD = sd (instrumentcost)) %>% 
+  ungroup() %>%
+  group_by(matrix_f, instrumenttype, Mean, SD) %>%
+  summarise() %>% 
+  rename("Matrix" = matrix_f) %>%
+  rename("Instrument" = instrumenttype) 
+
+ kable(Summary_F, digits = 0, caption = "Instrument Cost (USD). Summary statistics.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "400px")
+
+#Consumables
+ FTIR_C <- Cost_Clean %>%
+  filter(instrumenttype == "FTIR") %>%
+  filter(labid != "A")%>%
+  drop_na(consumables)
+ 
+ Summary_FC <- FTIR_C %>%
+  ungroup() %>% 
+  group_by(matrix_f) %>%
+  mutate(Mean = mean(consumables)) %>%
+  mutate(SD = sd (consumables)) %>% 
+  ungroup() %>%
+  group_by(matrix_f, instrumenttype, Mean, SD) %>%
+  summarise() %>% 
+  rename("Matrix" = matrix_f) %>%
+  rename("Instrument" = instrumenttype)  
+
+ kable(Summary_FC, digits = 0, caption = "Consumables Cost (USD). Summary statistics.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "400px")
+ 
+```
+
+# Raman
+
+```{r Raman Cost, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE}
+#Instrument
+Raman <- Cost_Clean %>%
+  filter(instrumenttype == "Raman") %>%
+  drop_na(instrumentcost)
+
+Summary_R <- Raman %>% 
+  ungroup() %>% 
+  group_by(matrix_f) %>%
+  mutate(Mean = mean(instrumentcost)) %>%
+  mutate(SD = sd (instrumentcost)) %>% 
+  ungroup() %>%
+  group_by(matrix_f, instrumenttype, Mean, SD) %>%
+  summarise() %>% 
+  rename("Matrix" = matrix_f) %>%
+  rename("Instrument" = instrumenttype) 
+
+ kable(Summary_R, digits = 0, caption = "Instrument Cost (USD). Summary statistics.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "400px")
+
+#Consumables
+ Raman_C <- Cost_Clean %>%
+  filter(instrumenttype == "Raman") %>%
+  drop_na(consumables)
+ 
+ Summary_RC <- Raman_C %>% 
+  ungroup() %>% 
+  group_by(matrix_f) %>%
+  mutate(Mean = mean(consumables)) %>%
+  mutate(SD = sd (consumables)) %>% 
+  ungroup() %>%
+  group_by(matrix_f, instrumenttype, Mean, SD) %>%
+  summarise() %>% 
+  rename("Matrix" = matrix_f) %>%
+  rename("Instrument" = instrumenttype)
+
+ kable(Summary_RC, digits = 0, caption = "Consumables Cost (USD). Summary statistics.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "400px")
+ 
+```
