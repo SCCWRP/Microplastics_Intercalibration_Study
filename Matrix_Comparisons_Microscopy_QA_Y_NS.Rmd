@@ -23,6 +23,7 @@ library(knitr) #Needed to display table
 library(cowplot) #Needed to combine plots
 library(kableExtra) #Needed for table features (i.e., scroll_box)
 library(forcats) #Needed for reordering axes
+library(plotrix) #Needed for std.error fxn
 
 ```
 
@@ -36,14 +37,17 @@ Full_DB$particleid <- gsub("Lab","",as.character(Full_DB$particleid))
 Full_DB$photoid <- gsub("Lab","",as.character(Full_DB$photoid))
 
 Results <- Full_DB %>%
-  #Removed lab D & A - incomparable with other data - deviation from methods
+  #Removed lab D - incomparable with other data - deviation from methods
   filter(!(labid == "D"&sampletype == "CW")) %>%
-  filter(!(labid == "A"&sampletype == "CW")) %>%
   #Removed pygcms data data
   filter(!(labid == "T"&sampletype == "CW")) %>%
   filter(!(labid == "F"&sampletype == "CW")) %>%
   #Removed second set from Lab N - 2nd set of samples processed
-  filter(!(labid == "N"&sampletype == "CW"&(grepl("5|6|7|8", sampleid)))) %>%   
+  filter(!(labid == "N"&sampletype == "CW"&(grepl("5|6|7|8", sampleid)))) %>% 
+  #Removed labs that submitted clean water data late (want to match with original clean water data analysis)
+  filter(!(labid == "WW"&sampletype == "CW")) %>%
+  filter(!(labid == "NN"&sampletype == "CW")) %>%
+  
   rename("microscopy" = stereoscope) %>% 
   rename("nilered" = fluorescencestaining)
 
@@ -58,7 +62,7 @@ Expertise <- Lab_Info %>%
 
 Results <- Results %>% 
    #Join expertise data to results data frame
-   left_join(Expertise, by = c("labid" = "labid", "sampletype" = "matrix"))  
+   left_join(Expertise, by = c("labid" = "labid", "sampletype" = "matrix")) 
 
 Reference <- read_csv('https://mpchecker.sccwrp.org/checker/export?table=sample_spiking_info', guess_max = 100000) #Import .csv file containing all reference spiking information for all matrices including clean water
 
@@ -136,7 +140,9 @@ Results_Clean <- Results %>%
     sampletype == "DW" ~ "Dirty Water")) %>% 
   mutate(sampletype_f = as.factor(sampletype)) %>%
   #Create a new column to indicate which samples are blanks - all sampleids with a 4 or 8
-  mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>%   
+  mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>% 
+  #Distinguish between sets of samples
+  mutate(set = ifelse(grepl("1|2|3|4", sampleid),1,2)) %>%
   #Exclude augmentation data
   filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & sampletype %in% c("Sediment"))) %>% 
   filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & sampletype %in% c("Fish Tissue")))
@@ -272,7 +278,7 @@ totalspikecol <- Reference_Clean %>% #Select total_spike column from reference
   
 Join_Microscopy_Total <- inner_join(Results_Clean_Microscopy, totalspikecol, by = c("sampleid", "sampletype_f")) %>% #Join total_spike column to microscopy results data frame
     mutate(total_pct_recovery = ((total/total_spike)*100)) %>%  #Create a new column for the total recovery of microscopy only results
-    group_by(labid, sampletype_f, sampleid, plastic_f, microscopy_f, total, total_spike, total_pct_recovery, expertise) %>% 
+    group_by(labid, set, sampletype_f, sampleid, plastic_f, microscopy_f, total, total_spike, total_pct_recovery, expertise) %>% 
     summarise()
     
 #Size Fraction
@@ -283,7 +289,7 @@ sizefractionsumresults <- Results_Clean_Microscopy %>%
   filter(!grepl("4", sampleid)) %>%
   filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
   drop_na(sizefraction_f) %>% #Drop particles not assigned to a size fraction
-  group_by(labid, sampletype_f, sampleid, microscopy_f, sizefraction_f, total_sizefraction, expertise) %>% 
+  group_by(labid, set, sampletype_f, sampleid, microscopy_f, sizefraction_f, total_sizefraction, expertise) %>% 
   summarise()
 
 Join_Microscopy_SizeFraction <- inner_join(sizefractionsumresults, sizefractionspikecol, by = c("sampleid" = "sampleid", "sizefraction_f" = "sizefraction_f", "sampletype_f")) %>%  
@@ -296,7 +302,7 @@ colorspikecol <- Reference_Clean %>%
 colorsumresults <- Results_Clean_Microscopy %>% 
   filter(!grepl("4", sampleid)) %>%
   filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
-  group_by(labid, sampletype_f, sampleid, microscopy_f, color_f, total_color, expertise) %>% 
+  group_by(labid, set, sampletype_f, sampleid, microscopy_f, color_f, total_color, expertise) %>% 
   summarise()
 
 Join_Microscopy_Color <- inner_join(colorsumresults, colorspikecol, by = c("sampleid" = "sampleid", "color_f" = "color_f", "sampletype_f")) %>%  
@@ -309,7 +315,7 @@ morphologyspikecol <- Reference_Clean %>%
 morphologysumresults <- Results_Clean_Microscopy %>% 
   filter(!grepl("4", sampleid)) %>%
   filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
-  group_by(labid, sampletype_f, sampleid, microscopy_f, morphology_f, total_morphology, expertise) %>% 
+  group_by(labid, set, sampletype_f, sampleid, microscopy_f, morphology_f, total_morphology, expertise) %>% 
   summarise()
 
 Join_Microscopy_Morphology <- inner_join(morphologysumresults, morphologyspikecol, by = c("sampleid" = "sampleid", "morphology_f" = "morphology_f", "sampletype_f")) %>%  
@@ -322,7 +328,7 @@ polymerspikecol <- Reference_Clean %>%
 polymersumresults <- Results_Clean_Microscopy %>% 
   filter(!grepl("4", sampleid)) %>%
   filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
-  group_by(labid, sampletype_f, sampleid, microscopy_f, polymer_f, total_polymer, expertise) %>% 
+  group_by(labid, set, sampletype_f, sampleid, microscopy_f, polymer_f, total_polymer, expertise) %>% 
   summarise()
 
 Join_Microscopy_Polymer <- inner_join(polymersumresults, polymerspikecol, by = c("sampleid" = "sampleid", "polymer_f" = "polymer_f", "sampletype_f")) %>%  
@@ -336,7 +342,7 @@ Join_Microscopy_Polymer <- inner_join(polymersumresults, polymerspikecol, by = c
  combosumresultscm <- Results_Clean_Microscopy %>%
    filter(!grepl("4", sampleid)) %>%
    filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
-   group_by(labid, sampletype_f, sampleid, microscopy_f, color_f, morphology_f, total_color_morphology, expertise) %>%
+   group_by(labid, set, sampletype_f, sampleid, microscopy_f, color_f, morphology_f, total_color_morphology, expertise) %>%
    summarise()
 
  Join_Microscopy_Combo_CM <- inner_join(combosumresultscm, combocmspikecol, by = c("sampleid" = "sampleid", "morphology_f" = "morphology_f", "color_f" = "color_f", "sampletype_f")) %>%
@@ -352,7 +358,7 @@ Join_Microscopy_Polymer <- inner_join(polymersumresults, polymerspikecol, by = c
    filter(!grepl("4", sampleid)) %>%
    filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
    drop_na(sizefraction_f) %>% #Drop particles not assigned to a size fraction
-   group_by(labid, sampletype_f, sampleid, microscopy_f, sizefraction_f, color_f, morphology_f, total_color_morphology_sizefraction, expertise) %>%
+   group_by(labid, set, sampletype_f, sampleid, microscopy_f, sizefraction_f, color_f, morphology_f, total_color_morphology_sizefraction, expertise) %>%
    summarise()
 
  Join_Microscopy_Combo <- inner_join(combosumresults, combospikecol, by = c("sampleid" = "sampleid", "morphology_f" = "morphology_f", "color_f" = "color_f", "sizefraction_f" = "sizefraction_f", "sampletype_f")) %>%
@@ -612,6 +618,7 @@ Recovery in this section is estimated based on a single particle characteristic.
 
 #Total - By Lab
 a <- Join_Microscopy_Total %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>% 
   filter(plastic_f != "N") %>%
   ungroup() %>% 
@@ -640,6 +647,7 @@ plot(a)
 
 #Total - By Lab
 a_a <- Join_Microscopy_Total %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>% 
   filter(plastic_f != "N") %>% 
   ungroup() %>% 
@@ -668,6 +676,7 @@ a_a <- Join_Microscopy_Total %>%
 plot(a_a)
 
 b <- Join_Microscopy_Total %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, labid, sampleid, total_pct_recovery) %>%
@@ -684,10 +693,11 @@ kable(b, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary sta
 
 #Total - Summary
 c<- Join_Microscopy_Total %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, total_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, total_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid) %>% 
   mutate(total_pct_recovery_mean = mean(total_pct_recovery)) %>% 
@@ -698,8 +708,8 @@ c<- Join_Microscopy_Total %>%
   ggplot(aes(x=microscopy_f, y= total_pct_recovery_mean)) +
   theme_test() +
   geom_rect(ymin = 95.7, ymax = 104.3, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
-  geom_point(aes(color = microscopy_f, fill = microscopy_f, alpha = 0.7), width = .05, size = 3) +
-  geom_boxplot(alpha = 0.5,aes(color = microscopy_f, fill = microscopy_f), outlier.shape = NA) +
+  geom_point(aes(color = sampletype_f, fill = sampletype_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
   geom_hline(yintercept = 100, linetype = "dotted")+
   facet_wrap(~sampletype_f, ncol = 3)+
   theme(text = element_text(size = 12),
@@ -709,24 +719,26 @@ c<- Join_Microscopy_Total %>%
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
         axis.ticks.x = element_blank())+
-  scale_color_manual(values = c("darkmagenta")) +   
-  scale_fill_manual(values = c("darkmagenta")) +
+  scale_color_manual(values = c("royalblue", "darksalmon", "goldenrod4")) +   
+  scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4")) +
   expand_limits(y = 0) +
   labs(y = "Recovery (%)", fill = "Lab", title = "Microscopy", subtitle = "Total Particle Recovery", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
 
 plot(c)
 
 d <- Join_Microscopy_Total %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
-  group_by(sampletype_f, labid) %>% 
+  group_by(sampletype_f, labid, set) %>% 
   mutate(`Mean (%)`= mean(total_pct_recovery)) %>%  
   mutate(`Median (%)` = median(total_pct_recovery)) %>%
   mutate(`SD (%)` = sd(total_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(total_pct_recovery)) %>% 
   mutate(`Min (%)` = min(total_pct_recovery)) %>% 
   mutate(`Max (%)` = max(total_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, labid, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, labid, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>%  
   rename("Lab ID" = labid) %>%
   distinct() 
@@ -736,9 +748,10 @@ kable(d, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary sta
   scroll_box(width = "700px", height = "200px")
 
 e <- Join_Microscopy_Total %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
-  group_by(sampletype_f, labid) %>% 
+  group_by(sampletype_f, labid, set) %>% 
   mutate(mean_lab = mean(total_pct_recovery)) %>% 
   ungroup() %>%
   distinct(sampletype_f, labid, mean_lab) %>%
@@ -746,11 +759,12 @@ e <- Join_Microscopy_Total %>%
   mutate(`Mean (%)`= mean(mean_lab)) %>%    
   mutate(`Median (%)` = median(mean_lab)) %>%
   mutate(`SD (%)` = sd(mean_lab)) %>%
+  mutate(`SE (%)` = std.error(mean_lab)) %>% 
   mutate(`Min (%)` = min(mean_lab)) %>% 
   mutate(`Max (%)` = max(mean_lab)) %>%
   ungroup() %>% 
   rename("Matrix" = sampletype_f) %>% 
-  select(`Matrix`, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(`Matrix`, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   distinct() 
 
 kable(e, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary statistics across all laboratories. Not blank corrected.")%>%
@@ -763,7 +777,8 @@ kable(e, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary sta
 ```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10}
 
 #All Size Fractions
-a <- Join_Microscopy_SizeFraction %>%  
+a <- Join_Microscopy_SizeFraction %>% 
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   ungroup() %>% 
@@ -771,12 +786,12 @@ a <- Join_Microscopy_SizeFraction %>%
   #Force size fractions to be in the correct order
   mutate(sizefraction_f = factor(sizefraction_f, levels = c("1-20 µm", "20-212 µm","212-500 µm",">500 µm"))) %>% 
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, sizefraction_f) %>% 
   mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
   ungroup() %>% 
-  group_by(sampletype_f, labid, microscopy_f, sizefraction_f, sizefrac_pct_recovery_mean) %>% 
+  group_by(sampletype_f, labid, set, microscopy_f, sizefraction_f, sizefrac_pct_recovery_mean) %>% 
   summarise() %>% 
   #Creating plot
   ggplot(aes(x=sampletype_f, y= sizefrac_pct_recovery_mean)) +
@@ -801,6 +816,7 @@ plot(a)
 
 #1-20µm - By Lab
 b <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(sizefraction_f == "1-20 µm") %>%
@@ -830,10 +846,11 @@ plot(b)
 
 #1-20µm - Summary
 c <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, sizefraction_f) %>% 
   mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
@@ -865,6 +882,7 @@ plot(c)
 
 #20-212 µm - By Lab
 d <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(sizefraction_f == "20-212 µm") %>%
@@ -894,10 +912,11 @@ plot(d)
 
 #20-212 µm - Summary
 e <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, sizefraction_f) %>% 
   mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
@@ -929,6 +948,7 @@ plot(e)
 
 #212-500 µm - By Lab
 f <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(sizefraction_f == "212-500 µm") %>%
@@ -958,10 +978,11 @@ plot(f)
 
 #212-500 µm - Summary
 g <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, sizefraction_f) %>% 
   mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
@@ -993,6 +1014,7 @@ plot(g)
 
 #>500 µm - By Lab
 h <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(sizefraction_f == ">500 µm") %>%
@@ -1022,10 +1044,11 @@ plot(h)
 
 #>500 µm - Summary
 i <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, sizefraction_f) %>% 
   mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
@@ -1057,6 +1080,7 @@ plot(i)
 
 #Size Fraction - By Sample
 j <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, labid, sampleid, sizefraction_f, sizefrac_pct_recovery) %>% 
@@ -1075,16 +1099,18 @@ kable(j, digits = 2, caption = "Microscopy: Total Particle Recovery by Size Frac
 
 #Size Fraction - By Lab
 k <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>% 
-  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  group_by(sampletype_f, labid, set, sizefraction_f) %>% 
   mutate(`Mean (%)`= mean(sizefrac_pct_recovery)) %>%  
   mutate(`Median (%)` = median(sizefrac_pct_recovery)) %>%
   mutate(`SD (%)` = sd(sizefrac_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(sizefrac_pct_recovery)) %>%
   mutate(`Min (%)` = min(sizefrac_pct_recovery)) %>% 
   mutate(`Max (%)` = max(sizefrac_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, labid, sizefraction_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, labid, sizefraction_f, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>%
   rename("Lab ID" = labid) %>%
   rename("Size Fraction" = sizefraction_f) %>%
@@ -1101,10 +1127,11 @@ l <- k %>%
   mutate(`Global Mean (%)`= mean(`Mean (%)`)) %>%   
   mutate(`Median (%)` = median(`Mean (%)`)) %>%
   mutate(`SD (%)` = sd(`Mean (%)`)) %>%
+  mutate(`SE (%)` = std.error(`Mean (%)`)) %>%
   mutate(`Min (%)` = min(`Mean (%)`)) %>% 
   mutate(`Max (%)` = max(`Mean (%)`)) %>%
   ungroup() %>% 
-  select(`Matrix`, `Size Fraction`, `Global Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(`Matrix`, `Size Fraction`, `Global Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   distinct() %>% 
   arrange(`Matrix`,`Size Fraction`)
 
@@ -1120,10 +1147,11 @@ kable(l, digits = 2, caption = "Microscopy: Total Particle Recovery by Size Frac
 
 #All Colors
 a <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, color_f) %>% 
   mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
@@ -1153,6 +1181,7 @@ plot(a)
 
 #Blue - By Lab
 b <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(color_f == "Blue") %>%
@@ -1182,10 +1211,11 @@ plot(b)
 
 #Blue - Summary
 c <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, color_f) %>% 
   mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
@@ -1217,6 +1247,7 @@ plot(c)
 
 #White - By Lab
 d <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(color_f == "White") %>%
@@ -1246,10 +1277,11 @@ plot(d)
 
 #White - Summary
 e <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, color_f) %>% 
   mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
@@ -1281,6 +1313,7 @@ plot(e)
 
 #Green - By Lab
 f <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(color_f == "Green") %>%
@@ -1310,10 +1343,11 @@ plot(f)
 
 #Green - Summary
 g <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, color_f) %>% 
   mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
@@ -1345,6 +1379,7 @@ plot(g)
 
 #Orange - By Lab
 h <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(color_f == "Orange") %>%
@@ -1374,10 +1409,11 @@ plot(h)
 
 #Orange - Summary
 i <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, color_f) %>% 
   mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
@@ -1409,6 +1445,7 @@ plot(i)
 
 #Clear - By Lab
 j <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(color_f == "Clear") %>%
@@ -1438,10 +1475,11 @@ plot(j)
 
 #Clear - Summary
 k <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, color_f) %>% 
   mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
@@ -1473,6 +1511,7 @@ plot(k)
 
 #Color - By Sample
 l <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, labid, sampleid, color_f, color_pct_recovery) %>% 
@@ -1490,16 +1529,18 @@ kable(l, digits = 2, caption = "Microscopy: Total Particle Recovery by Size Frac
 
 #Color - By Lab
 m <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, labid, color_f) %>% 
   mutate(`Mean (%)`= mean(color_pct_recovery)) %>%  
   mutate(`Median (%)` = median(color_pct_recovery)) %>%
   mutate(`SD (%)` = sd(color_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(color_pct_recovery)) %>%
   mutate(`Min (%)` = min(color_pct_recovery)) %>% 
   mutate(`Max (%)` = max(color_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, labid, color_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, labid, color_f, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>%
   rename("Lab ID" = labid) %>%
   rename("Color" = color_f) %>%
@@ -1515,10 +1556,11 @@ n <- m %>%
   mutate(`Global Mean (%)`= mean(`Mean (%)`)) %>%   
   mutate(`Median (%)` = median(`Mean (%)`)) %>%
   mutate(`SD (%)` = sd(`Mean (%)`)) %>%
+  mutate(`SE (%)` = std.error(`Mean (%)`)) %>%
   mutate(`Min (%)` = min(`Mean (%)`)) %>% 
   mutate(`Max (%)` = max(`Mean (%)`)) %>%
   ungroup() %>% 
-  select(`Matrix`, `Color`, `Global Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(`Matrix`, `Color`, `Global Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   distinct() 
 
 kable(n, digits = 2, caption = "Microscopy: Total Particle Recovery by Color. Summary statistics across all laboratories. Not blank corrected.") %>%
@@ -1533,10 +1575,11 @@ kable(n, digits = 2, caption = "Microscopy: Total Particle Recovery by Color. Su
 
 #All Morphologies
 a <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, morphology_f) %>% 
   mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
@@ -1567,6 +1610,7 @@ plot(a)
 
 #Fibers - By Lab
 b <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(morphology_f == "Fiber") %>%
@@ -1596,10 +1640,11 @@ plot(b)
 
 #Fiber - Summary
 c <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, morphology_f) %>% 
   mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
@@ -1660,10 +1705,11 @@ plot(d)
 
 #Sphere - Summary
 e <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, morphology_f) %>% 
   mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
@@ -1724,10 +1770,11 @@ plot(f)
 
 #Fragments - Summary
 g <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, morphology_f) %>% 
   mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
@@ -1759,6 +1806,7 @@ plot(g)
 
 #Morphology - By Sample
 h <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, labid, sampleid, morphology_f, morphology_pct_recovery) %>% 
@@ -1770,22 +1818,24 @@ h <- Join_Microscopy_Morphology %>%
   rename("Recovery" = morphology_pct_recovery) %>%
   distinct() 
 
-kable(h, digits = 2, caption = "Microscopy: Total Particle Recovery by Morphology. Summary statistics by sample (n = 1-3 samples). Not blank corrected.") %>%
+kable(h, digits = 2, caption = "Microscopy: Total Particle Recovery by Size Fraction. Summary statistics by sample (n = 1-3 samples). Not blank corrected.") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
   scroll_box(width = "700px", height = "200px")
 
 #Morphology - By Lab
 i <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
-  group_by(sampletype_f, labid, morphology_f) %>% 
+  group_by(sampletype_f, labid, set, morphology_f) %>% 
   mutate(`Mean (%)`= mean(morphology_pct_recovery)) %>%  
   mutate(`Median (%)` = median(morphology_pct_recovery)) %>%
   mutate(`SD (%)` = sd(morphology_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(morphology_pct_recovery)) %>%
   mutate(`Min (%)` = min(morphology_pct_recovery)) %>% 
   mutate(`Max (%)` = max(morphology_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, labid, morphology_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, labid, morphology_f, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>% 
   rename("Lab ID" = labid) %>%
   rename("Morphology" = morphology_f) %>%
@@ -1803,10 +1853,11 @@ j <- Join_Microscopy_Morphology %>%
   mutate(`Mean (%)`= mean(morphology_pct_recovery)) %>%  
   mutate(`Median (%)` = median(morphology_pct_recovery)) %>%
   mutate(`SD (%)` = sd(morphology_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(morphology_pct_recovery)) %>%
   mutate(`Min (%)` = min(morphology_pct_recovery)) %>% 
   mutate(`Max (%)` = max(morphology_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, morphology_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, morphology_f, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>%
   rename("Morphology" = morphology_f) %>%
   distinct() 
@@ -1822,6 +1873,7 @@ kable(j, digits = 2, caption = "Microscopy: Total Particle Recovery by Morpholog
 
 #All Materials
 a <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
@@ -1856,6 +1908,7 @@ plot(a)
 
 #PE - By Lab
 b <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(polymer_f == "PE") %>%
@@ -1885,6 +1938,7 @@ plot(b)
 
 #PE - Summary
 c <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
@@ -1920,6 +1974,7 @@ plot(c)
 
 #PE - By Lab
 d <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(polymer_f == "PS") %>%
@@ -1949,6 +2004,7 @@ plot(d)
 
 #PS - Summary
 e <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
@@ -1984,6 +2040,7 @@ plot(e)
 
 #PET - By Lab
 f <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(polymer_f == "PET") %>%
@@ -2013,6 +2070,7 @@ plot(f)
 
 #PET - Summary
 g <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
@@ -2048,6 +2106,7 @@ plot(g)
 
 #PVC - By Lab
 h <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   filter(polymer_f == "PVC") %>%
@@ -2077,6 +2136,7 @@ plot(h)
 
 #PVC - Summary
 c <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
@@ -2112,6 +2172,7 @@ plot(c)
 
 #Polymer - By Sample
 h <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, labid, sampleid, polymer_f, polymer_pct_recovery) %>% 
@@ -2129,16 +2190,18 @@ kable(h, digits = 2, caption = "Microscopy: Total Particle Recovery by Polymer. 
 
 #Polymer - By Lab
 i <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, labid, polymer_f) %>% 
   mutate(`Mean (%)`= mean(polymer_pct_recovery)) %>%  
   mutate(`Median (%)` = median(polymer_pct_recovery)) %>%
   mutate(`SD (%)` = sd(polymer_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(polymer_pct_recovery)) %>%
   mutate(`Min (%)` = min(polymer_pct_recovery)) %>% 
   mutate(`Max (%)` = max(polymer_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, labid, polymer_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, labid, polymer_f, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>% 
   rename("Lab ID" = labid) %>%
   rename("Polymer" = polymer_f) %>%
@@ -2150,16 +2213,18 @@ kable(i, digits = 2, caption = "Microscopy: Total Particle Recovery by Polymer. 
 
 #polymer - Summary
 j <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, polymer_f) %>% 
   mutate(`Mean (%)`= mean(polymer_pct_recovery)) %>%  
   mutate(`Median (%)` = median(polymer_pct_recovery)) %>%
   mutate(`SD (%)` = sd(polymer_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(polymer_pct_recovery)) %>%
   mutate(`Min (%)` = min(polymer_pct_recovery)) %>% 
   mutate(`Max (%)` = max(polymer_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, polymer_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, polymer_f, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>%
   rename("Polymer" = polymer_f) %>%
   distinct() 
@@ -2177,12 +2242,13 @@ The dotted line is at 100% and the grey area represents the mean RSD for each gi
 
 Recovery in this section is estimated based on color and morphology within a size fraction. For example, if the sample was spiked with 10 green spheres >500 µm and 8 green spheres were recovered in the >500 µm size fraction, recovery is estimated as 80%. However, if 4 of these spheres were reported as blue rather than green, recovery would fall to 60%. 
 
-```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, results = 'asis', fig.width = 12, fig.height = 10}
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, results = 'asis'}
 
 #Make data frame of particle characteristics
 df <- Join_Microscopy_Combo %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f == "Y") %>% 
-  group_by(morphology_f, color_f, sizefraction_f) %>% 
+  group_by(sampletype_f, morphology_f, color_f, sizefraction_f) %>% 
   summarise()
 
 for (i in 1:nrow(df))
@@ -2191,7 +2257,7 @@ for (i in 1:nrow(df))
   
 #By Lab
 a <- Join_Microscopy_Combo %>%
-  group_by(labid, sampleid, microscopy_f,sizefraction_f, color_f, morphology_f, color_morphology_sizefraction_pct_recovery) %>% 
+  group_by(sampletype_f, labid, sampleid, microscopy_f,sizefraction_f, color_f, morphology_f, color_morphology_sizefraction_pct_recovery) %>% 
   filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
   filter(color_f == df$color_f[[i]]) %>% 
   filter(morphology_f == df$morphology_f[[i]]) %>%
@@ -2210,6 +2276,7 @@ a <- Join_Microscopy_Combo %>%
         legend.position = "right",
         axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
         axis.ticks.x = element_blank())+
+  facet_wrap(~sampletype_f, scales = "free")+
   scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
   scale_color_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
   expand_limits(y = 0) +
@@ -2224,10 +2291,10 @@ b <- Join_Microscopy_Combo %>%
   filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
   filter(color_f == df$color_f[[i]]) %>% 
   filter(morphology_f == df$morphology_f[[i]]) %>%
-  group_by(labid) %>%
+  group_by(sampletype_f, labid) %>%
   mutate(color_morphology_sizefraction_pct_recovery_mean = mean(color_morphology_sizefraction_pct_recovery)) %>%
   ungroup() %>%
-  group_by(labid, microscopy_f,color_morphology_sizefraction_pct_recovery_mean) %>%
+  group_by(sampletype_f, labid, microscopy_f,color_morphology_sizefraction_pct_recovery_mean) %>%
   summarise() %>%
   #Creating plot
   ggplot(aes(x=microscopy_f,y= color_morphology_sizefraction_pct_recovery_mean)) +
@@ -2242,6 +2309,7 @@ b <- Join_Microscopy_Combo %>%
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
         axis.ticks.x = element_blank())+
+  facet_wrap(~sampletype_f, scales = "free")+
   scale_color_manual(values = c("darkmagenta", "orchid")) +
   scale_fill_manual(values = c("darkmagenta", "orchid")) +
   expand_limits(y = 0) +
@@ -2253,12 +2321,13 @@ plot(b)
  
 #By Sample
 c <- Join_Microscopy_Combo %>%
-  group_by(labid, sizefraction_f, color_f, morphology_f) %>%
+  group_by(sampletype_f, labid, sizefraction_f, color_f, morphology_f) %>%
   filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
   filter(color_f == df$color_f[[i]]) %>% 
   filter(morphology_f == df$morphology_f[[i]]) %>%
   ungroup() %>%
-  select(labid, sampleid, color_morphology_sizefraction_pct_recovery) %>%
+  select(sampletype_f, labid, sampleid, color_morphology_sizefraction_pct_recovery) %>%
+  rename("Matrix" = sampletype_f) %>% 
   rename("Lab ID" = labid) %>%
   rename("Sample ID" = sampleid) %>%
   rename("Recovery" = color_morphology_sizefraction_pct_recovery) %>%
@@ -2271,21 +2340,24 @@ print(kable(c, digits = 2, caption = paste(df$sizefraction_f[[i]], df$color_f[[i
 
 #By Lab
 d <- Join_Microscopy_Combo %>%
-  group_by(labid, sizefraction_f, color_f, morphology_f) %>%
+  group_by(sampletype_f, labid, sizefraction_f, color_f, morphology_f) %>%
   filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
   filter(color_f == df$color_f[[i]]) %>% 
   filter(morphology_f == df$morphology_f[[i]]) %>%
   mutate(Mean = mean(color_morphology_sizefraction_pct_recovery)) %>%
   mutate(Median = median(color_morphology_sizefraction_pct_recovery)) %>%
   mutate(SD = sd(color_morphology_sizefraction_pct_recovery)) %>%
+  mutate(SE = std.error(color_morphology_sizefraction_pct_recovery)) %>%
   mutate(Min = min(color_morphology_sizefraction_pct_recovery)) %>%
   mutate(Max = max(color_morphology_sizefraction_pct_recovery)) %>%
   ungroup() %>%
-  select(labid, Mean, Median, SD, Min, Max) %>%
+  select(sampletype_f, labid, Mean, Median, SD, SE, Min, Max) %>%
+  rename("Matrix" = sampletype_f) %>% 
   rename("Lab ID" = labid) %>%
   rename("Mean (%)" = Mean) %>%
   rename("Median (%)" = Median) %>%
   rename("SD (%)" = SD) %>%
+  rename("SE (%)" = SE) %>%
   rename("Min (%)" = Min) %>%
   rename("Max (%)" = Max) %>%
   distinct()
@@ -2295,92 +2367,7 @@ print(kable(d, digits = 2, caption = paste(df$sizefraction_f[[i]], df$color_f[[i
   scroll_box(width = "700px", height = "200px"))  
   cat('\n')
 
-
  } #Close loop
-
-```
-
-### Team Recov stuff
-
-```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10, fig.height = 10}
-#Total - Summary
-c<- Join_Microscopy_Total %>%
-  filter(sampletype_f != "Dirty Water") %>%
-  filter(plastic_f != "N") %>%
-  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
-  #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, total_pct_recovery) %>% 
-  summarise() %>% 
-  group_by(sampletype_f, labid) %>% 
-  mutate(total_pct_recovery_mean = mean(total_pct_recovery)) %>% 
-  ungroup() %>% 
-  group_by(sampletype_f, labid, microscopy_f, total_pct_recovery_mean) %>% 
-  summarise() %>% 
-  #Creating plot
-  ggplot(aes(x=microscopy_f, y= total_pct_recovery_mean)) +
-  theme_test() +
-  geom_rect(ymin = 95.7, ymax = 104.3, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
-  geom_point(aes(color = sampletype_f, fill = sampletype_f, alpha = 0.7), width = .05, size = 3) +
-  geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
-  geom_hline(yintercept = 100, linetype = "dotted")+
-  facet_wrap(~sampletype_f, ncol = 3)+
-  theme(text = element_text(size = 12),
-        plot.title = element_text(hjust = 0.5),
-        plot.subtitle = element_text(hjust = 0.5),
-        legend.position = "none",
-        axis.text.x = element_blank(),
-        axis.title.x = element_blank(),
-        axis.ticks.x = element_blank())+
-  scale_color_manual(values = c("royalblue", "darksalmon", "goldenrod4")) +   
-  scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4")) +
-  expand_limits(y = 0) +
-  labs(y = "Recovery (%)", fill = "Lab", title = "Microscopy", subtitle = "Total Particle Recovery", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
-
-plot(c)
-
-e <- Join_Microscopy_Total %>%
-  filter(sampletype_f != "Dirty Water") %>%
-  filter(plastic_f != "N") %>%
-  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
-  group_by(sampletype_f, labid) %>% 
-  mutate(mean_lab = mean(total_pct_recovery)) %>% 
-  ungroup() %>%
-  distinct(sampletype_f, labid, mean_lab) %>%
-  group_by(sampletype_f) %>% 
-  mutate(`Mean (%)`= mean(mean_lab)) %>%    
-  mutate(`Median (%)` = median(mean_lab)) %>%
-  mutate(`SD (%)` = sd(mean_lab)) %>%
-  mutate(`Min (%)` = min(mean_lab)) %>% 
-  mutate(`Max (%)` = max(mean_lab)) %>%
-  ungroup() %>% 
-  rename("Matrix" = sampletype_f) %>% 
-  select(`Matrix`, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
-  distinct() 
-
-kable(e, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary statistics across all laboratories. Not blank corrected.")%>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) #%>% 
-  # scroll_box(width = "700px", height = "200px")
-
-d <- Join_Microscopy_Total %>%
-  filter(sampletype_f != "Dirty Water") %>%
-  filter(plastic_f != "N") %>%
-  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
-  group_by(sampletype_f, labid) %>% 
-  mutate(`Mean (%)`= mean(total_pct_recovery)) %>%  
-  mutate(`Median (%)` = median(total_pct_recovery)) %>%
-  mutate(`SD (%)` = sd(total_pct_recovery)) %>%
-  mutate(`Min (%)` = min(total_pct_recovery)) %>% 
-  mutate(`Max (%)` = max(total_pct_recovery)) %>%
-  ungroup() %>% 
-  select(sampletype_f, labid, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
-  rename("Matrix" = sampletype_f) %>%  
-  rename("Lab ID" = labid) %>%
-  distinct() 
-
-kable(d, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary statistics by laboratory (n = 1-3 samples). Not blank corrected.") %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
-  scroll_box(width = "700px", height = "200px")
-
 
 ```
 
@@ -2421,10 +2408,10 @@ Results_Clean_Microscopy <- Results_Clean %>%
   group_by(sampletype_f, sampleid, morphology_f) %>% 
   mutate(total_morphology = n_distinct(sampleid, particleid)) %>% 
   ungroup() %>% 
-  #Total particles by polymer
+  #Total particle spike per polymer
   group_by(sampletype_f, sampleid, polymer_f) %>% 
   mutate(total_polymer = n_distinct(sampleid, particleid)) %>% 
-  ungroup() %>% 
+  ungroup() %>%
   #Total particles by color and morphology within size fraction
   group_by(sampletype_f, sampleid, sizefraction_f, color_f, morphology_f) %>% 
   mutate(total_color_morphology_sizefraction = n_distinct(sampleid, particleid)) %>% 
@@ -2435,7 +2422,7 @@ Results_Clean_Microscopy <- Results_Clean %>%
   ungroup() %>% 
   #Select and rename relevant type of expertise to work for fields below
   rename("expertise" = expertisevisualmicroscopy) %>% 
-  replace_na(list(expertise = "Not Reported"))
+  replace_na(list(expertise = "Not Reported")) 
 
 ```
 
@@ -2474,7 +2461,7 @@ Reference_Clean <- Reference %>%
     sizefraction == "212-500" ~ "212-500 µm",
     sizefraction == ">500" ~ ">500 µm")) %>%   
   mutate(sizefraction_f = as.factor(sizefraction)) %>%
-  mutate(polymer_f = as.factor(polymerid)) %>%
+  mutate(polymer_f = as.factor(polymerid)) %>% 
   mutate(plastic_f = as.factor(plastic)) %>%
   mutate(sampletype = case_when(
     sampletype == "CW" ~ "Clean Water",
@@ -2528,7 +2515,7 @@ totalspikecol <- Reference_Clean %>% #Select total_spike column from reference
   
 Join_Microscopy_Total <- inner_join(Results_Clean_Microscopy, totalspikecol, by = c("sampleid", "sampletype_f")) %>% #Join total_spike column to microscopy results data frame
     mutate(total_pct_recovery = ((total/total_spike)*100)) %>%  #Create a new column for the total recovery of microscopy only results
-    group_by(labid, sampletype_f, sampleid, plastic_f, microscopy_f, total, total_spike, total_pct_recovery, expertise) %>% 
+    group_by(labid, set, sampletype_f, sampleid, plastic_f, microscopy_f, total, total_spike, total_pct_recovery, expertise) %>% 
     summarise()
     
 #Size Fraction
@@ -2539,7 +2526,7 @@ sizefractionsumresults <- Results_Clean_Microscopy %>%
   filter(!grepl("4", sampleid)) %>%
   filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
   drop_na(sizefraction_f) %>% #Drop particles not assigned to a size fraction
-  group_by(labid, sampletype_f, sampleid, microscopy_f, sizefraction_f, total_sizefraction, expertise) %>% 
+  group_by(labid, set, sampletype_f, sampleid, microscopy_f, sizefraction_f, total_sizefraction, expertise) %>% 
   summarise()
 
 Join_Microscopy_SizeFraction <- inner_join(sizefractionsumresults, sizefractionspikecol, by = c("sampleid" = "sampleid", "sizefraction_f" = "sizefraction_f", "sampletype_f")) %>%  
@@ -2552,7 +2539,7 @@ colorspikecol <- Reference_Clean %>%
 colorsumresults <- Results_Clean_Microscopy %>% 
   filter(!grepl("4", sampleid)) %>%
   filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
-  group_by(labid, sampletype_f, sampleid, microscopy_f, color_f, total_color, expertise) %>% 
+  group_by(labid, set, sampletype_f, sampleid, microscopy_f, color_f, total_color, expertise) %>% 
   summarise()
 
 Join_Microscopy_Color <- inner_join(colorsumresults, colorspikecol, by = c("sampleid" = "sampleid", "color_f" = "color_f", "sampletype_f")) %>%  
@@ -2565,7 +2552,7 @@ morphologyspikecol <- Reference_Clean %>%
 morphologysumresults <- Results_Clean_Microscopy %>% 
   filter(!grepl("4", sampleid)) %>%
   filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
-  group_by(labid, sampletype_f, sampleid, microscopy_f, morphology_f, total_morphology, expertise) %>% 
+  group_by(labid, set, sampletype_f, sampleid, microscopy_f, morphology_f, total_morphology, expertise) %>% 
   summarise()
 
 Join_Microscopy_Morphology <- inner_join(morphologysumresults, morphologyspikecol, by = c("sampleid" = "sampleid", "morphology_f" = "morphology_f", "sampletype_f")) %>%  
@@ -2578,7 +2565,7 @@ polymerspikecol <- Reference_Clean %>%
 polymersumresults <- Results_Clean_Microscopy %>% 
   filter(!grepl("4", sampleid)) %>%
   filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
-  group_by(labid, sampletype_f, sampleid, microscopy_f, polymer_f, total_polymer, expertise) %>% 
+  group_by(labid, set, sampletype_f, sampleid, microscopy_f, polymer_f, total_polymer, expertise) %>% 
   summarise()
 
 Join_Microscopy_Polymer <- inner_join(polymersumresults, polymerspikecol, by = c("sampleid" = "sampleid", "polymer_f" = "polymer_f", "sampletype_f")) %>%  
@@ -2592,7 +2579,7 @@ Join_Microscopy_Polymer <- inner_join(polymersumresults, polymerspikecol, by = c
  combosumresultscm <- Results_Clean_Microscopy %>%
    filter(!grepl("4", sampleid)) %>%
    filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
-   group_by(labid, sampletype_f, sampleid, microscopy_f, color_f, morphology_f, total_color_morphology, expertise) %>%
+   group_by(labid, set, sampletype_f, sampleid, microscopy_f, color_f, morphology_f, total_color_morphology, expertise) %>%
    summarise()
 
  Join_Microscopy_Combo_CM <- inner_join(combosumresultscm, combocmspikecol, by = c("sampleid" = "sampleid", "morphology_f" = "morphology_f", "color_f" = "color_f", "sampletype_f")) %>%
@@ -2608,7 +2595,7 @@ Join_Microscopy_Polymer <- inner_join(polymersumresults, polymerspikecol, by = c
    filter(!grepl("4", sampleid)) %>%
    filter(!grepl("8", sampleid)) %>% #Dropping blank samples from results
    drop_na(sizefraction_f) %>% #Drop particles not assigned to a size fraction
-   group_by(labid, sampletype_f, sampleid, microscopy_f, sizefraction_f, color_f, morphology_f, total_color_morphology_sizefraction, expertise) %>%
+   group_by(labid, set, sampletype_f, sampleid, microscopy_f, sizefraction_f, color_f, morphology_f, total_color_morphology_sizefraction, expertise) %>%
    summarise()
 
  Join_Microscopy_Combo <- inner_join(combosumresults, combospikecol, by = c("sampleid" = "sampleid", "morphology_f" = "morphology_f", "color_f" = "color_f", "sizefraction_f" = "sizefraction_f", "sampletype_f")) %>%
@@ -2630,6 +2617,7 @@ Recovery in this section is estimated based on a single particle characteristic.
 
 #Total - By Lab
 a <- Join_Microscopy_Total %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   ungroup() %>% 
   mutate(labid = fct_reorder(labid, expertise)) %>%  
@@ -2657,13 +2645,12 @@ plot(a)
 
 #Total - By Lab
 a_a <- Join_Microscopy_Total %>% 
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
-  filter(plastic_f != "N") %>% 
   ungroup() %>% 
   group_by(labid) %>% 
   mutate(All_Matrices = if_else(n_distinct(sampletype_f) == 4, "Y", "N")) %>% 
   filter(All_Matrices == "Y") %>% 
-  ungroup() %>% 
   ungroup() %>%  
   #Creating plot
   ggplot(aes(x=labid, y= total_pct_recovery)) +
@@ -2686,6 +2673,7 @@ a_a <- Join_Microscopy_Total %>%
 plot(a_a)
 
 b <- Join_Microscopy_Total %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, labid, sampleid, total_pct_recovery) %>%
   summarise() %>% 
@@ -2701,9 +2689,10 @@ kable(b, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary sta
 
 #Total - Summary
 c<- Join_Microscopy_Total %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, total_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, total_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid) %>% 
   mutate(total_pct_recovery_mean = mean(total_pct_recovery)) %>% 
@@ -2733,15 +2722,17 @@ c<- Join_Microscopy_Total %>%
 plot(c)
 
 d <- Join_Microscopy_Total %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
-  group_by(sampletype_f, labid) %>% 
+  group_by(sampletype_f, labid, set) %>% 
   mutate(`Mean (%)`= mean(total_pct_recovery)) %>%  
   mutate(`Median (%)` = median(total_pct_recovery)) %>%
   mutate(`SD (%)` = sd(total_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(total_pct_recovery)) %>%
   mutate(`Min (%)` = min(total_pct_recovery)) %>% 
   mutate(`Max (%)` = max(total_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, labid, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, labid, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>%  
   rename("Lab ID" = labid) %>%
   distinct() 
@@ -2751,8 +2742,9 @@ kable(d, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary sta
   scroll_box(width = "700px", height = "200px")
 
 e <- Join_Microscopy_Total %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
-  group_by(sampletype_f, labid) %>% 
+  group_by(sampletype_f, labid, set) %>% 
   mutate(mean_lab = mean(total_pct_recovery)) %>% 
   ungroup() %>%
   distinct(sampletype_f, labid, mean_lab) %>%
@@ -2760,11 +2752,12 @@ e <- Join_Microscopy_Total %>%
   mutate(`Mean (%)`= mean(mean_lab)) %>%    
   mutate(`Median (%)` = median(mean_lab)) %>%
   mutate(`SD (%)` = sd(mean_lab)) %>%
+  mutate(`SE (%)` = std.error(mean_lab)) %>%
   mutate(`Min (%)` = min(mean_lab)) %>% 
   mutate(`Max (%)` = max(mean_lab)) %>%
   ungroup() %>% 
   rename("Matrix" = sampletype_f) %>% 
-  select(`Matrix`, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(`Matrix`, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   distinct() 
 
 kable(e, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary statistics across all laboratories. Not blank corrected.")%>%
@@ -2777,7 +2770,8 @@ kable(e, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary sta
 ```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10}
 
 #All Size Fractions
-a <- Join_Microscopy_SizeFraction %>%  
+a <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   ungroup() %>% 
   mutate(labid = fct_reorder(labid, expertise)) %>%
@@ -2814,6 +2808,7 @@ plot(a)
 
 #212-500 µm - By Lab
 f <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   filter(sizefraction_f == "212-500 µm") %>%
   ungroup() %>% 
@@ -2842,9 +2837,10 @@ plot(f)
 
 #212-500 µm - Summary
 g <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, sizefraction_f) %>% 
   mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
@@ -2876,6 +2872,7 @@ plot(g)
 
 #>500 µm - By Lab
 h <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   filter(sizefraction_f == ">500 µm") %>%
   ungroup() %>% 
@@ -2904,9 +2901,10 @@ plot(h)
 
 #>500 µm - Summary
 i <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, sizefraction_f) %>% 
   mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
@@ -2938,6 +2936,7 @@ plot(i)
 
 #Size Fraction - By Sample
 j <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, labid, sampleid, sizefraction_f, sizefrac_pct_recovery) %>% 
   summarise() %>% 
@@ -2955,15 +2954,17 @@ kable(j, digits = 2, caption = "Microscopy: Total Particle Recovery by Size Frac
 
 #Size Fraction - By Lab
 k <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>% 
-  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  group_by(sampletype_f, labid, set, sizefraction_f) %>% 
   mutate(`Mean (%)`= mean(sizefrac_pct_recovery)) %>%  
   mutate(`Median (%)` = median(sizefrac_pct_recovery)) %>%
   mutate(`SD (%)` = sd(sizefrac_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(sizefrac_pct_recovery)) %>%
   mutate(`Min (%)` = min(sizefrac_pct_recovery)) %>% 
   mutate(`Max (%)` = max(sizefrac_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, labid, sizefraction_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, labid, sizefraction_f, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>%
   rename("Lab ID" = labid) %>%
   rename("Size Fraction" = sizefraction_f) %>%
@@ -2980,10 +2981,11 @@ l <- k %>%
   mutate(`Global Mean (%)`= mean(`Mean (%)`)) %>%   
   mutate(`Median (%)` = median(`Mean (%)`)) %>%
   mutate(`SD (%)` = sd(`Mean (%)`)) %>%
+  mutate(`SE (%)` = std.error(`Mean (%)`)) %>%
   mutate(`Min (%)` = min(`Mean (%)`)) %>% 
   mutate(`Max (%)` = max(`Mean (%)`)) %>%
   ungroup() %>% 
-  select(`Matrix`, `Size Fraction`, `Global Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(`Matrix`, `Size Fraction`, `Global Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   distinct() %>% 
   arrange(`Matrix`,`Size Fraction`)
 
@@ -2999,9 +3001,10 @@ kable(l, digits = 2, caption = "Microscopy: Total Particle Recovery by Size Frac
 
 #All Colors
 a <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, color_f) %>% 
   mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
@@ -3031,6 +3034,7 @@ plot(a)
 
 #Blue - By Lab
 b <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   filter(color_f == "Blue") %>%
   ungroup() %>% 
@@ -3059,9 +3063,10 @@ plot(b)
 
 #Blue - Summary
 c <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, color_f) %>% 
   mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
@@ -3093,6 +3098,7 @@ plot(c)
 
 #White - By Lab
 d <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   filter(color_f == "White") %>%
   ungroup() %>% 
@@ -3121,9 +3127,10 @@ plot(d)
 
 #White - Summary
 e <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, color_f) %>% 
   mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
@@ -3155,6 +3162,7 @@ plot(e)
 
 #Green - By Lab
 f <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   filter(color_f == "Green") %>%
   ungroup() %>% 
@@ -3183,9 +3191,10 @@ plot(f)
 
 #Green - Summary
 g <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, color_f) %>% 
   mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
@@ -3217,6 +3226,7 @@ plot(g)
 
 #Orange - By Lab
 h <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   filter(color_f == "Orange") %>%
   ungroup() %>% 
@@ -3245,9 +3255,10 @@ plot(h)
 
 #Orange - Summary
 i <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, color_f) %>% 
   mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
@@ -3279,6 +3290,7 @@ plot(i)
 
 #Clear - By Lab
 j <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   filter(color_f == "Clear") %>%
   ungroup() %>% 
@@ -3307,9 +3319,10 @@ plot(j)
 
 #Clear - Summary
 k <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, color_f) %>% 
   mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
@@ -3341,6 +3354,7 @@ plot(k)
 
 #Color - By Sample
 l <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, labid, sampleid, color_f, color_pct_recovery) %>% 
   summarise() %>% 
@@ -3357,15 +3371,17 @@ kable(l, digits = 2, caption = "Microscopy: Total Particle Recovery by Size Frac
 
 #Color - By Lab
 m <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
-  group_by(sampletype_f, labid, color_f) %>% 
+  group_by(sampletype_f, labid, set, color_f) %>% 
   mutate(`Mean (%)`= mean(color_pct_recovery)) %>%  
   mutate(`Median (%)` = median(color_pct_recovery)) %>%
   mutate(`SD (%)` = sd(color_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(color_pct_recovery)) %>%
   mutate(`Min (%)` = min(color_pct_recovery)) %>% 
   mutate(`Max (%)` = max(color_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, labid, color_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, labid, color_f, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>%
   rename("Lab ID" = labid) %>%
   rename("Color" = color_f) %>%
@@ -3381,10 +3397,11 @@ n <- m %>%
   mutate(`Global Mean (%)`= mean(`Mean (%)`)) %>%   
   mutate(`Median (%)` = median(`Mean (%)`)) %>%
   mutate(`SD (%)` = sd(`Mean (%)`)) %>%
+  mutate(`SE (%)` = std.error(`Mean (%)`)) %>%
   mutate(`Min (%)` = min(`Mean (%)`)) %>% 
   mutate(`Max (%)` = max(`Mean (%)`)) %>%
   ungroup() %>% 
-  select(`Matrix`, `Color`, `Global Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(`Matrix`, `Color`, `Global Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   distinct() 
 
 kable(n, digits = 2, caption = "Microscopy: Total Particle Recovery by Color. Summary statistics across all laboratories. Not blank corrected.") %>%
@@ -3399,9 +3416,10 @@ kable(n, digits = 2, caption = "Microscopy: Total Particle Recovery by Color. Su
 
 #All Morphologies
 a <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, morphology_f) %>% 
   mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
@@ -3432,6 +3450,7 @@ plot(a)
 
 #Fibers - By Lab
 b <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   filter(morphology_f == "Fiber") %>%
   ungroup() %>% 
@@ -3460,9 +3479,10 @@ plot(b)
 
 #Fiber - Summary
 c <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, morphology_f) %>% 
   mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
@@ -3494,6 +3514,7 @@ plot(c)
 
 #Spheres - By Lab
 d <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   filter(morphology_f == "Sphere") %>%
   ungroup() %>% 
@@ -3522,9 +3543,10 @@ plot(d)
 
 #Sphere - Summary
 e <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, morphology_f) %>% 
   mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
@@ -3556,6 +3578,7 @@ plot(e)
 
 #Fragments - By Lab
 f <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   filter(morphology_f == "Fragment") %>%
   ungroup() %>% 
@@ -3584,9 +3607,10 @@ plot(f)
 
 #Fragments - Summary
 g <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
   summarise() %>% 
   group_by(sampletype_f, labid, morphology_f) %>% 
   mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
@@ -3618,6 +3642,7 @@ plot(g)
 
 #Morphology - By Sample
 h <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, labid, sampleid, morphology_f, morphology_pct_recovery) %>% 
   summarise() %>%
@@ -3628,21 +3653,23 @@ h <- Join_Microscopy_Morphology %>%
   rename("Recovery" = morphology_pct_recovery) %>%
   distinct() 
 
-kable(h, digits = 2, caption = "Microscopy: Total Particle Recovery by Morphology. Summary statistics by sample (n = 1-3 samples). Not blank corrected.") %>%
+kable(h, digits = 2, caption = "Microscopy: Total Particle Recovery by Size Fraction. Summary statistics by sample (n = 1-3 samples). Not blank corrected.") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
   scroll_box(width = "700px", height = "200px")
 
 #Morphology - By Lab
 i <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
-  group_by(sampletype_f, labid, morphology_f) %>% 
+  group_by(sampletype_f, labid, set, morphology_f) %>% 
   mutate(`Mean (%)`= mean(morphology_pct_recovery)) %>%  
   mutate(`Median (%)` = median(morphology_pct_recovery)) %>%
   mutate(`SD (%)` = sd(morphology_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(morphology_pct_recovery)) %>%
   mutate(`Min (%)` = min(morphology_pct_recovery)) %>% 
   mutate(`Max (%)` = max(morphology_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, labid, morphology_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, labid, morphology_f, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>% 
   rename("Lab ID" = labid) %>%
   rename("Morphology" = morphology_f) %>%
@@ -3654,15 +3681,17 @@ kable(i, digits = 2, caption = "Microscopy: Total Particle Recovery by Morpholog
 
 #Morphology - Summary
 j <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, morphology_f) %>% 
   mutate(`Mean (%)`= mean(morphology_pct_recovery)) %>%  
   mutate(`Median (%)` = median(morphology_pct_recovery)) %>%
   mutate(`SD (%)` = sd(morphology_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(morphology_pct_recovery)) %>%
   mutate(`Min (%)` = min(morphology_pct_recovery)) %>% 
   mutate(`Max (%)` = max(morphology_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, morphology_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, morphology_f, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>%
   rename("Morphology" = morphology_f) %>%
   distinct() 
@@ -3678,6 +3707,7 @@ kable(j, digits = 2, caption = "Microscopy: Total Particle Recovery by Morpholog
 
 #All Materials
 a <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
   group_by(sampletype_f, labid, sampleid, microscopy_f, polymer_f, polymer_pct_recovery) %>% 
@@ -3711,6 +3741,7 @@ plot(a)
 
 #PE - By Lab
 b <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   filter(polymer_f == "PE") %>%
   ungroup() %>% 
@@ -3739,6 +3770,7 @@ plot(b)
 
 #PE - Summary
 c <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
   group_by(sampletype_f, labid, sampleid, microscopy_f, polymer_f, polymer_pct_recovery) %>% 
@@ -3773,6 +3805,7 @@ plot(c)
 
 #PE - By Lab
 d <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   filter(polymer_f == "PS") %>%
   ungroup() %>% 
@@ -3801,6 +3834,7 @@ plot(d)
 
 #PS - Summary
 e <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
   group_by(sampletype_f, labid, sampleid, microscopy_f, polymer_f, polymer_pct_recovery) %>% 
@@ -3835,6 +3869,7 @@ plot(e)
 
 #PET - By Lab
 f <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   filter(polymer_f == "PET") %>%
   ungroup() %>% 
@@ -3863,6 +3898,7 @@ plot(f)
 
 #PET - Summary
 g <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   #Data manipulation
   group_by(sampletype_f, labid, sampleid, microscopy_f, polymer_f, polymer_pct_recovery) %>% 
@@ -3897,6 +3933,7 @@ plot(g)
 
 #Polymer - By Sample
 h <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, labid, sampleid, polymer_f, polymer_pct_recovery) %>% 
   summarise() %>%
@@ -3913,15 +3950,17 @@ kable(h, digits = 2, caption = "Microscopy: Total Particle Recovery by Polymer. 
 
 #Polymer - By Lab
 i <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, labid, polymer_f) %>% 
   mutate(`Mean (%)`= mean(polymer_pct_recovery)) %>%  
   mutate(`Median (%)` = median(polymer_pct_recovery)) %>%
   mutate(`SD (%)` = sd(polymer_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(polymer_pct_recovery)) %>%
   mutate(`Min (%)` = min(polymer_pct_recovery)) %>% 
   mutate(`Max (%)` = max(polymer_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, labid, polymer_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, labid, polymer_f, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>% 
   rename("Lab ID" = labid) %>%
   rename("Polymer" = polymer_f) %>%
@@ -3933,15 +3972,17 @@ kable(i, digits = 2, caption = "Microscopy: Total Particle Recovery by Polymer. 
 
 #polymer - Summary
 j <- Join_Microscopy_Polymer %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   group_by(sampletype_f, polymer_f) %>% 
   mutate(`Mean (%)`= mean(polymer_pct_recovery)) %>%  
   mutate(`Median (%)` = median(polymer_pct_recovery)) %>%
   mutate(`SD (%)` = sd(polymer_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(polymer_pct_recovery)) %>%
   mutate(`Min (%)` = min(polymer_pct_recovery)) %>% 
   mutate(`Max (%)` = max(polymer_pct_recovery)) %>%
   ungroup() %>% 
-  select(sampletype_f, polymer_f, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
+  select(sampletype_f, polymer_f, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
   rename("Matrix" = sampletype_f) %>%
   rename("Polymer" = polymer_f) %>%
   distinct() 
@@ -3963,8 +4004,9 @@ Recovery in this section is estimated based on color and morphology within a siz
 
 #Make data frame of particle characteristics
 df <- Join_Microscopy_Combo %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f == "Y") %>% 
-  group_by(morphology_f, color_f, sizefraction_f) %>% 
+  group_by(sampletype_f, morphology_f, color_f, sizefraction_f) %>% 
   summarise()
 
 for (i in 1:nrow(df))
@@ -3973,7 +4015,7 @@ for (i in 1:nrow(df))
   
 #By Lab
 a <- Join_Microscopy_Combo %>%
-  group_by(labid, sampleid, microscopy_f,sizefraction_f, color_f, morphology_f, color_morphology_sizefraction_pct_recovery) %>% 
+  group_by(sampletype_f, labid, sampleid, microscopy_f,sizefraction_f, color_f, morphology_f, color_morphology_sizefraction_pct_recovery) %>% 
   filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
   filter(color_f == df$color_f[[i]]) %>% 
   filter(morphology_f == df$morphology_f[[i]]) %>%
@@ -3992,6 +4034,7 @@ a <- Join_Microscopy_Combo %>%
         legend.position = "right",
         axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
         axis.ticks.x = element_blank())+
+  facet_wrap(~sampletype_f, scales = "free")+
   scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
   scale_color_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
   expand_limits(y = 0) +
@@ -4006,10 +4049,10 @@ b <- Join_Microscopy_Combo %>%
   filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
   filter(color_f == df$color_f[[i]]) %>% 
   filter(morphology_f == df$morphology_f[[i]]) %>%
-  group_by(labid) %>%
+  group_by(sampletype_f, labid) %>%
   mutate(color_morphology_sizefraction_pct_recovery_mean = mean(color_morphology_sizefraction_pct_recovery)) %>%
   ungroup() %>%
-  group_by(labid, microscopy_f,color_morphology_sizefraction_pct_recovery_mean) %>%
+  group_by(sampletype_f, labid, microscopy_f,color_morphology_sizefraction_pct_recovery_mean) %>%
   summarise() %>%
   #Creating plot
   ggplot(aes(x=microscopy_f,y= color_morphology_sizefraction_pct_recovery_mean)) +
@@ -4024,6 +4067,7 @@ b <- Join_Microscopy_Combo %>%
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
         axis.ticks.x = element_blank())+
+  facet_wrap(~sampletype_f, scales = "free")+
   scale_color_manual(values = c("darkmagenta", "orchid")) +
   scale_fill_manual(values = c("darkmagenta", "orchid")) +
   expand_limits(y = 0) +
@@ -4035,12 +4079,13 @@ plot(b)
  
 #By Sample
 c <- Join_Microscopy_Combo %>%
-  group_by(labid, sizefraction_f, color_f, morphology_f) %>%
+  group_by(sampletype_f, labid, sizefraction_f, color_f, morphology_f) %>%
   filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
   filter(color_f == df$color_f[[i]]) %>% 
   filter(morphology_f == df$morphology_f[[i]]) %>%
   ungroup() %>%
-  select(labid, sampleid, color_morphology_sizefraction_pct_recovery) %>%
+  select(sampletype_f, labid, sampleid, color_morphology_sizefraction_pct_recovery) %>%
+  rename("Matrix" = sampletype_f) %>% 
   rename("Lab ID" = labid) %>%
   rename("Sample ID" = sampleid) %>%
   rename("Recovery" = color_morphology_sizefraction_pct_recovery) %>%
@@ -4053,21 +4098,24 @@ print(kable(c, digits = 2, caption = paste(df$sizefraction_f[[i]], df$color_f[[i
 
 #By Lab
 d <- Join_Microscopy_Combo %>%
-  group_by(labid, sizefraction_f, color_f, morphology_f) %>%
+  group_by(sampletype_f, labid, sizefraction_f, color_f, morphology_f) %>%
   filter(sizefraction_f == df$sizefraction_f[[i]]) %>% 
   filter(color_f == df$color_f[[i]]) %>% 
   filter(morphology_f == df$morphology_f[[i]]) %>%
   mutate(Mean = mean(color_morphology_sizefraction_pct_recovery)) %>%
   mutate(Median = median(color_morphology_sizefraction_pct_recovery)) %>%
   mutate(SD = sd(color_morphology_sizefraction_pct_recovery)) %>%
+  mutate(SE = std.error(color_morphology_sizefraction_pct_recovery)) %>%
   mutate(Min = min(color_morphology_sizefraction_pct_recovery)) %>%
   mutate(Max = max(color_morphology_sizefraction_pct_recovery)) %>%
   ungroup() %>%
-  select(labid, Mean, Median, SD, Min, Max) %>%
+  select(sampletype_f, labid, Mean, Median, SD, SE, Min, Max) %>%
+  rename("Matrix" = sampletype_f) %>% 
   rename("Lab ID" = labid) %>%
   rename("Mean (%)" = Mean) %>%
   rename("Median (%)" = Median) %>%
   rename("SD (%)" = SD) %>%
+  rename("SE (%)" = SE) %>%
   rename("Min (%)" = Min) %>%
   rename("Max (%)" = Max) %>%
   distinct()
@@ -4077,89 +4125,7 @@ print(kable(d, digits = 2, caption = paste(df$sizefraction_f[[i]], df$color_f[[i
   scroll_box(width = "700px", height = "200px"))  
   cat('\n')
 
-
  } #Close loop
-
-```
-
-### Team Recov stuff
-
-```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10, fig.height = 10}
-#Total - Summary
-c<- Join_Microscopy_Total %>%
-  filter(plastic_f != "N") %>%
-  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
-  #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, total_pct_recovery) %>% 
-  summarise() %>% 
-  group_by(sampletype_f, labid) %>% 
-  mutate(total_pct_recovery_mean = mean(total_pct_recovery)) %>% 
-  ungroup() %>% 
-  group_by(sampletype_f, labid, microscopy_f, total_pct_recovery_mean) %>% 
-  summarise() %>% 
-  #Creating plot
-  ggplot(aes(x=microscopy_f, y= total_pct_recovery_mean)) +
-  theme_test() +
-  geom_rect(ymin = 95.7, ymax = 104.3, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
-  geom_point(aes(color = sampletype_f, fill = sampletype_f, alpha = 0.7), width = .05, size = 3) +
-  geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
-  geom_hline(yintercept = 100, linetype = "dotted")+
-  facet_wrap(~sampletype_f, ncol = 4)+
-  theme(text = element_text(size = 12),
-        plot.title = element_text(hjust = 0.5),
-        plot.subtitle = element_text(hjust = 0.5),
-        legend.position = "none",
-        axis.text.x = element_blank(),
-        axis.title.x = element_blank(),
-        axis.ticks.x = element_blank())+
-  scale_color_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4")) +   
-  scale_fill_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4")) +
-  expand_limits(y = 0) +
-  labs(y = "Recovery (%)", fill = "Lab", title = "Microscopy", subtitle = "Total Particle Recovery", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
-
-plot(c)
-
-e <- Join_Microscopy_Total %>%
-  filter(plastic_f != "N") %>%
-  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
-  group_by(sampletype_f, labid) %>% 
-  mutate(mean_lab = mean(total_pct_recovery)) %>% 
-  ungroup() %>%
-  distinct(sampletype_f, labid, mean_lab) %>%
-  group_by(sampletype_f) %>% 
-  mutate(`Mean (%)`= mean(mean_lab)) %>%    
-  mutate(`Median (%)` = median(mean_lab)) %>%
-  mutate(`SD (%)` = sd(mean_lab)) %>%
-  mutate(`Min (%)` = min(mean_lab)) %>% 
-  mutate(`Max (%)` = max(mean_lab)) %>%
-  ungroup() %>% 
-  rename("Matrix" = sampletype_f) %>% 
-  select(`Matrix`, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
-  distinct() 
-
-kable(e, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary statistics across all laboratories. Not blank corrected.")%>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) #%>% 
-  # scroll_box(width = "700px", height = "200px")
-
-d <- Join_Microscopy_Total %>%
-  filter(plastic_f != "N") %>%
-  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
-  group_by(sampletype_f, labid) %>% 
-  mutate(`Mean (%)`= mean(total_pct_recovery)) %>%  
-  mutate(`Median (%)` = median(total_pct_recovery)) %>%
-  mutate(`SD (%)` = sd(total_pct_recovery)) %>%
-  mutate(`Min (%)` = min(total_pct_recovery)) %>% 
-  mutate(`Max (%)` = max(total_pct_recovery)) %>%
-  ungroup() %>% 
-  select(sampletype_f, labid, `Mean (%)`, `Median (%)`, `SD (%)`, `Min (%)`, `Max (%)`) %>%
-  rename("Matrix" = sampletype_f) %>%  
-  rename("Lab ID" = labid) %>%
-  distinct() 
-
-kable(d, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary statistics by laboratory (n = 1-3 samples). Not blank corrected.") %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
-  scroll_box(width = "700px", height = "200px")
-
 
 ```
 
