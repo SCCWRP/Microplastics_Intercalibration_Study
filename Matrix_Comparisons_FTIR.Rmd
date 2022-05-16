@@ -36,14 +36,17 @@ Full_DB$particleid <- gsub("Lab","",as.character(Full_DB$particleid))
 Full_DB$photoid <- gsub("Lab","",as.character(Full_DB$photoid))
 
 Results <- Full_DB %>%
-  #Removed lab D & A - incomparable with other data - deviation from methods
+  #Removed lab D - incomparable with other data - deviation from methods
   filter(!(labid == "D"&sampletype == "CW")) %>%
-  filter(!(labid == "A"&sampletype == "CW")) %>%
   #Removed pygcms data data
   filter(!(labid == "T"&sampletype == "CW")) %>%
   filter(!(labid == "F"&sampletype == "CW")) %>%
   #Removed second set from Lab N - 2nd set of samples processed
-  filter(!(labid == "N"&sampletype == "CW"&(grepl("5|6|7|8", sampleid)))) %>%   
+  filter(!(labid == "N"&sampletype == "CW"&(grepl("5|6|7|8", sampleid)))) %>% 
+  #Removed labs that submitted clean water data late (want to match with original clean water data analysis)
+  filter(!(labid == "WW"&sampletype == "CW")) %>%
+  filter(!(labid == "NN"&sampletype == "CW")) %>%
+   
   rename("microscopy" = stereoscope) %>% 
   rename("nilered" = fluorescencestaining)
 
@@ -258,7 +261,6 @@ size_plot <-  size %>%
    theme(plot.title = element_text(hjust = 0.5)) +
    theme(axis.text=element_text(size=15),
          axis.title=element_text(size=14,face="bold")) +
-   scale_fill_manual(values = cal_palette("kelp1")) +
    labs(title = "Particles Analyzed via FTIR", caption = "Results are for spiked plastic and false positive particles that where chemically identified using FTIR. Data labels represent the number of particles analyzed.")
 
 size_plot
