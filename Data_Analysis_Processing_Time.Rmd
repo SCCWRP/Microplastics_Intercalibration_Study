@@ -46,21 +46,30 @@ Extraction$sampleid <- gsub("Lab","",as.character(Extraction$sampleid))
 
 #Select data relating to expertise for visual microscopy
 Expertise <- Lab_Info %>%
-  select(labid, expertiseextraction, expertisevisualmicroscopy, expertisenilered, expertiseftir, expertiseraman, expertisepy_gcms)
+  select(labid, matrix, expertiseextraction, expertisevisualmicroscopy, expertisenilered, expertiseftir, expertiseraman, expertisepy_gcms)
 
 #Join expertise data to results data frame
 Extraction <- Extraction %>% 
-   left_join(Expertise, by = c("labid" = "labid"))
+   left_join(Expertise, by = c("labid" = "labid", "matrix" = "matrix"))
 
 Time_Extraction_Sample <- Extraction %>%
-  #drop labs F, D, T and WW from clean water samples
-  filter(!(labid == "F" & matrix == "CW")) %>% 
-  filter(!(labid == "D" & matrix == "CW")) %>%
-  filter(!(labid == "T" & matrix == "CW")) %>%
-  #Exclude sediment augmentation data
-  filter(!(labid %in% c("R","D") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>%
-  #Exclude second set from lab N
-  filter(!(labid == "N" & grepl("5|6|7|8", sampleid) & matrix == "CW")) %>%
+  mutate(sampletype = case_when(grepl("CW", sampleid) ~ "CW",
+                            grepl("DW", sampleid) ~ "DW",
+                            grepl("FT", sampleid) ~ "FT",
+                            grepl("SD", sampleid) ~ "SD")) %>% 
+  #Removed lab D - incomparable with other data - deviation from methods
+  filter(!(labid == "D"&sampletype == "CW")) %>%
+  #Removed pygcms data data
+  filter(!(labid == "T"&sampletype == "CW")) %>%
+  filter(!(labid == "F"&sampletype == "CW")) %>%
+  #Removed second set from Lab N - 2nd set of samples processed
+  filter(!(labid == "N"&sampletype == "CW"&(grepl("5|6|7|8", sampleid)))) %>% 
+  #Removed labs that submitted clean water data late (want to match with original clean water data analysis)
+  filter(!(labid == "WW"&sampletype == "CW")) %>%
+  filter(!(labid == "NN"&sampletype == "CW")) %>%
+  #Exclude augmentation data
+  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & sampletype %in% c("Sediment"))) %>% 
+  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & sampletype %in% c("Fish Tissue"))) %>% 
   #drop blank samples
   mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>% 
   filter(blank == "N") %>% 
@@ -101,20 +110,26 @@ Microscopy <- Microscopy %>%
 
 #Join expertise data to results data frame
 Microscopy <- Microscopy %>% 
-   left_join(Expertise, by = c("labid" = "labid"))
+   left_join(Expertise, by = c("labid" = "labid", "matrix" = "matrix"))
 
 Time_Microscopy_Sample <- Microscopy %>%
-  #drop labs F, D, T and WW from clean water samples
-  filter(!(labid == "F" & matrix == "CW")) %>% 
-  filter(!(labid == "D" & matrix == "CW")) %>%
-  filter(!(labid == "T" & matrix == "CW")) %>%
-  #Exclude sediment augmentation data
-  filter(!(labid %in% c("R","D") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>%
-  #Exclude second set from lab N
-  filter(!(labid == "N" & grepl("5|6|7|8", sampleid) & matrix == "CW")) %>%
+  mutate(sampletype = case_when(grepl("CW", sampleid) ~ "CW",
+                            grepl("DW", sampleid) ~ "DW",
+                            grepl("FT", sampleid) ~ "FT",
+                            grepl("SD", sampleid) ~ "SD")) %>% 
+  #Removed lab D - incomparable with other data - deviation from methods
+  filter(!(labid == "D"&sampletype == "CW")) %>%
+  #Removed pygcms data data
+  filter(!(labid == "T"&sampletype == "CW")) %>%
+  filter(!(labid == "F"&sampletype == "CW")) %>%
+  #Removed second set from Lab N - 2nd set of samples processed
+  filter(!(labid == "N"&sampletype == "CW"&(grepl("5|6|7|8", sampleid)))) %>% 
+  #Removed labs that submitted clean water data late (want to match with original clean water data analysis)
+  filter(!(labid == "WW"&sampletype == "CW")) %>%
+  filter(!(labid == "NN"&sampletype == "CW")) %>%
   #Exclude augmentation data
-  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>% 
-  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & matrix %in% c("FT"))) %>% 
+  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & sampletype %in% c("Sediment"))) %>% 
+  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & sampletype %in% c("Fish Tissue"))) %>% 
   #drop blank samples
   mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>% 
   filter(blank == "N") %>% 
@@ -125,8 +140,8 @@ Time_Microscopy_Sample <- Microscopy %>%
 
 Time_Microscopy_Lab <- Time_Microscopy_Sample %>% 
   ungroup() %>% 
-  group_by(matrix, labid, time_sample, expertisevisualmicroscopy) %>%
-  summarise() %>% 
+  group_by(matrix, labid, sampleid, time_sample, expertisevisualmicroscopy) %>%
+  summarise() %>%  
   ungroup() %>% 
   group_by(matrix, labid) %>% 
   mutate(time_lab = mean(time_sample)) %>% 
@@ -154,22 +169,28 @@ NileRed <- NileRed %>%
 
 #Join expertise data to results data frame
 NileRed <- NileRed %>% 
-   left_join(Expertise, by = c("labid" = "labid"))
+   left_join(Expertise, by = c("labid" = "labid", "matrix" = "matrix"))
 
 Time_NileRed_Sample <- NileRed %>%
   #remove fake lab 
-  filter(labid != "ACME") %>% 
-  #drop labs F, D, T and WW from clean water samples
-  filter(!(labid == "F" & matrix == "CW")) %>% 
-  filter(!(labid == "D" & matrix == "CW")) %>%
-  filter(!(labid == "T" & matrix == "CW")) %>%
-  #Exclude sediment augmentation data
-  filter(!(labid %in% c("R","D") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>%
-  #Exclude second set from lab N
-  filter(!(labid == "N" & grepl("5|6|7|8", sampleid) & matrix == "CW")) %>%
+  filter(labid != "ACME") %>%
+  mutate(sampletype = case_when(grepl("CW", sampleid) ~ "CW",
+                            grepl("DW", sampleid) ~ "DW",
+                            grepl("FT", sampleid) ~ "FT",
+                            grepl("SD", sampleid) ~ "SD")) %>% 
+  #Removed lab D - incomparable with other data - deviation from methods
+  filter(!(labid == "D"&sampletype == "CW")) %>%
+  #Removed pygcms data data
+  filter(!(labid == "T"&sampletype == "CW")) %>%
+  filter(!(labid == "F"&sampletype == "CW")) %>%
+  #Removed second set from Lab N - 2nd set of samples processed
+  filter(!(labid == "N"&sampletype == "CW"&(grepl("5|6|7|8", sampleid)))) %>% 
+  #Removed labs that submitted clean water data late (want to match with original clean water data analysis)
+  filter(!(labid == "WW"&sampletype == "CW")) %>%
+  filter(!(labid == "NN"&sampletype == "CW")) %>%
   #Exclude augmentation data
-  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>% 
-  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & matrix %in% c("FT"))) %>% 
+  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & sampletype %in% c("Sediment"))) %>% 
+  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & sampletype %in% c("Fish Tissue"))) %>% 
   #drop blank samples
   mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>% 
   filter(blank == "N") %>% 
@@ -209,22 +230,28 @@ FTIR <- FTIR %>%
 
 #Join expertise data to results data frame
 FTIR <- FTIR %>% 
-   left_join(Expertise, by = c("labid" = "labid"))
+   left_join(Expertise, by = c("labid" = "labid", "matrix" = "matrix"))
 
 Time_FTIR_Sample <- FTIR %>%
   #remove fake lab 
   filter(labid != "ACME") %>%
-  #drop labs F, D, T and WW from clean water samples
-  filter(!(labid == "F" & matrix == "CW")) %>% 
-  filter(!(labid == "D" & matrix == "CW")) %>%
-  filter(!(labid == "T" & matrix == "CW")) %>%
-  #Exclude sediment augmentation data
-  filter(!(labid %in% c("R","D") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>%
-  #Exclude second set from lab N
-  filter(!(labid == "N" & grepl("5|6|7|8", sampleid) & matrix == "CW")) %>%
+  mutate(sampletype = case_when(grepl("CW", sampleid) ~ "CW",
+                            grepl("DW", sampleid) ~ "DW",
+                            grepl("FT", sampleid) ~ "FT",
+                            grepl("SD", sampleid) ~ "SD")) %>% 
+  #Removed lab D - incomparable with other data - deviation from methods
+  filter(!(labid == "D"&sampletype == "CW")) %>%
+  #Removed pygcms data data
+  filter(!(labid == "T"&sampletype == "CW")) %>%
+  filter(!(labid == "F"&sampletype == "CW")) %>%
+  #Removed second set from Lab N - 2nd set of samples processed
+  filter(!(labid == "N"&sampletype == "CW"&(grepl("5|6|7|8", sampleid)))) %>% 
+  #Removed labs that submitted clean water data late (want to match with original clean water data analysis)
+  filter(!(labid == "WW"&sampletype == "CW")) %>%
+  filter(!(labid == "NN"&sampletype == "CW")) %>%
   #Exclude augmentation data
-  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>% 
-  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & matrix %in% c("FT"))) %>% 
+  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & sampletype %in% c("Sediment"))) %>% 
+  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & sampletype %in% c("Fish Tissue"))) %>%
   #drop blank samples
   mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>% 
   filter(blank == "N") %>%
@@ -267,22 +294,28 @@ Raman <- Raman %>%
 
 #Join expertise data to results data frame
 Raman <- Raman %>% 
-   left_join(Expertise, by = c("labid" = "labid"))
+   left_join(Expertise, by = c("labid" = "labid", "matrix" = "matrix"))
 
 Time_Raman_Sample <- Raman %>%
   #remove fake lab 
   filter(labid != "ACME") %>%
-  #drop labs F, D, T and WW from clean water samples
-  filter(!(labid == "F" & matrix == "CW")) %>% 
-  filter(!(labid == "D" & matrix == "CW")) %>%
-  filter(!(labid == "T" & matrix == "CW")) %>%
-  #Exclude sediment augmentation data
-  filter(!(labid %in% c("R","D") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>%
-  #Exclude second set from lab N
-  filter(!(labid == "N" & grepl("5|6|7|8", sampleid) & matrix == "CW")) %>%
+  mutate(sampletype = case_when(grepl("CW", sampleid) ~ "CW",
+                            grepl("DW", sampleid) ~ "DW",
+                            grepl("FT", sampleid) ~ "FT",
+                            grepl("SD", sampleid) ~ "SD")) %>% 
+  #Removed lab D - incomparable with other data - deviation from methods
+  filter(!(labid == "D"&sampletype == "CW")) %>%
+  #Removed pygcms data data
+  filter(!(labid == "T"&sampletype == "CW")) %>%
+  filter(!(labid == "F"&sampletype == "CW")) %>%
+  #Removed second set from Lab N - 2nd set of samples processed
+  filter(!(labid == "N"&sampletype == "CW"&(grepl("5|6|7|8", sampleid)))) %>% 
+  #Removed labs that submitted clean water data late (want to match with original clean water data analysis)
+  filter(!(labid == "WW"&sampletype == "CW")) %>%
+  filter(!(labid == "NN"&sampletype == "CW")) %>%
   #Exclude augmentation data
-  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & matrix %in% c("SD"))) %>% 
-  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & matrix %in% c("FT"))) %>% 
+  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & sampletype %in% c("Sediment"))) %>% 
+  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & sampletype %in% c("Fish Tissue"))) %>%
   #drop blank samples
   mutate(blank = ifelse(grepl("4|8", sampleid),"Y", "N")) %>% 
   filter(blank == "N") %>% 

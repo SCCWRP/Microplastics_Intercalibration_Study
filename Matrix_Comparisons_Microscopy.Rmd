@@ -10,7 +10,7 @@ output:
     toc_float: true
 ---
 
-![](./www/logobanner.png)
+![](../www/logobanner.png)
 
 ```{r Packages, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 
@@ -508,6 +508,85 @@ e <- Results_Clean_Microscopy %>%
 kable(e, digits = 2, caption = "Raw Particle Count. Global summary statistics. Not blank corrected.")%>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
   scroll_box(width = "700px", height = "200px")
+
+#Size Fraction Count
+f <- Results_Clean_Microscopy %>%  
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blanks
+  filter(sampletype_f != "Dirty Water") %>% 
+  group_by(sampletype_f, sizefraction_f, labid, set, total_sizefraction) %>% 
+  summarise() %>% 
+  mutate(total_mean = mean(total_sizefraction)) %>% 
+  ungroup() %>% 
+  distinct(sampletype_f, sizefraction_f, labid, total_mean) %>%
+  group_by(sampletype_f, sizefraction_f) %>% 
+  mutate(`Mean`= mean(total_mean)) %>%  
+  mutate(`Median` = median(total_mean)) %>%
+  mutate(`SD` = sd(total_mean)) %>%
+  mutate(`Min` = min(total_mean)) %>% 
+  mutate(`Max` = max(total_mean)) %>%
+  ungroup() %>% 
+  select(sampletype_f, sizefraction_f, `Mean`, `Median`, `SD`, `Min`, `Max`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Size Fraction" = sizefraction_f) %>%
+  distinct() 
+
+kable(f, digits = 2, caption = "Raw Particle Count: Size Fraction. Global summary statistics. Not blank corrected.")%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+#Color Count
+g <- Results_Clean_Microscopy %>%  
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blanks
+  filter(sampletype_f != "Dirty Water") %>% 
+  group_by(sampletype_f, color_f, labid, set, total_color) %>% 
+  summarise() %>% 
+  mutate(total_mean = mean(total_color)) %>% 
+  ungroup() %>% 
+  distinct(sampletype_f, color_f, labid, total_mean) %>%
+  group_by(sampletype_f, color_f) %>% 
+  mutate(`Mean`= mean(total_mean)) %>%  
+  mutate(`Median` = median(total_mean)) %>%
+  mutate(`SD` = sd(total_mean)) %>%
+  mutate(`Min` = min(total_mean)) %>% 
+  mutate(`Max` = max(total_mean)) %>%
+  ungroup() %>% 
+  select(sampletype_f, color_f, `Mean`, `Median`, `SD`, `Min`, `Max`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Color" = color_f) %>%
+  distinct() 
+
+kable(g, digits = 2, caption = "Raw Particle Count: Color. Global summary statistics. Not blank corrected.")%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+#Morphology Count
+h <- Results_Clean_Microscopy %>%  
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blanks
+  filter(sampletype_f != "Dirty Water") %>% 
+  group_by(sampletype_f, morphology_f, labid, set, total_morphology) %>% 
+  summarise() %>% 
+  mutate(total_mean = mean(total_morphology)) %>% 
+  ungroup() %>% 
+  distinct(sampletype_f, morphology_f, labid, total_mean) %>%
+  group_by(sampletype_f, morphology_f) %>% 
+  mutate(`Mean`= mean(total_mean)) %>%  
+  mutate(`Median` = median(total_mean)) %>%
+  mutate(`SD` = sd(total_mean)) %>%
+  mutate(`Min` = min(total_mean)) %>% 
+  mutate(`Max` = max(total_mean)) %>%
+  ungroup() %>% 
+  select(sampletype_f, morphology_f, `Mean`, `Median`, `SD`, `Min`, `Max`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Morphology" = morphology_f) %>%
+  distinct() 
+
+kable(h, digits = 2, caption = "Raw Particle Count: Morphology. Global summary statistics. Not blank corrected.")%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
 ```
 
 # Blank Contamination
@@ -612,6 +691,44 @@ kable(d, digits = 2, caption = "Blank Particle Count.") %>%
   scroll_box(width = "700px", height = "200px")
 
 ```
+
+```{r Manuscript Figure 3, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+
+Fig3 <- Results_Clean_Microscopy %>%
+  filter(!(labid == "Z"&sampletype_f == "Clean Water")) %>%
+  filter(!(labid == "M"&sampletype_f == "Dirty Water")) %>%
+  filter(!(labid == "M"&sampletype_f == "Fish Tissue")) %>%
+  filter(!(labid == "M"&sampletype_f == "Sediment")) %>%
+  filter(blank == "Y") %>% 
+  group_by(labid, sampleid, total, sampletype_f) %>% 
+  summarise() %>% 
+  ungroup() %>%
+  mutate(sampletype_f = case_when(
+    sampletype_f == "Clean Water" ~ "Drinking Water",
+    sampletype_f == "Dirty Water" ~ "Surface Water",
+    sampletype_f == "Fish Tissue" ~ "Fish Tissue",
+    sampletype_f == "Sediment" ~ "Sediment")) %>%
+  #Creating plot
+  ggplot(aes(x=sampletype_f, y= total)) +
+  theme_test() +
+  geom_point(aes(color = sampletype_f, fill = sampletype_f, alpha = 0.7), size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
+  theme(text = element_text(size = 16),
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("royalblue", "darksalmon", "goldenrod4", "forestgreen")) +
+  scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4", "forestgreen")) +
+  expand_limits(y = 0) +
+  labs(y = "Particle Count")
+  
+plot(Fig3)
+
+saveRDS(Fig3, file = "./Manuscript_Figures/Fig3")
+
+```
+
 
 # Clean Water, Fish Tissue and Sediment Comparisons
 
@@ -1154,6 +1271,51 @@ kable(l, digits = 2, caption = "Microscopy: Total Particle Recovery by Size Frac
 
 ```
 
+```{r Manuscript Fig S3, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+
+#All Size Fractions
+FigS3 <- Join_Microscopy_SizeFraction %>%  
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  ungroup() %>%
+  mutate(sampletype_f = case_when(
+    sampletype_f == "Clean Water" ~ "Drinking Water",
+    sampletype_f == "Dirty Water" ~ "Surface Water",
+    sampletype_f == "Fish Tissue" ~ "Fish Tissue",
+    sampletype_f == "Sediment" ~ "Sediment")) %>%
+  #Force size fractions to be in the correct order
+  mutate(sizefraction_f = factor(sizefraction_f, levels = c("1-20 µm", "20-212 µm","212-500 µm",">500 µm"))) %>%   #Data manipulation
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, microscopy_f, sizefraction_f, sizefrac_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=sampletype_f, y= sizefrac_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = sampletype_f, fill = sampletype_f), alpha = 0.7, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sizefraction_f, nrow = 1, scales = "free")+
+  theme(text = element_text(size = 15),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("royalblue", "darksalmon", "goldenrod4")) +   
+  scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Matrix", color = "Matrix")
+
+plot(FigS3)
+
+saveRDS(FigS3, file = "./Manuscript_Figures/FigS3")
+
+```
+
 ### Color
 
 ```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10}
@@ -1545,7 +1707,7 @@ m <- Join_Microscopy_Color %>%
   filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
-  group_by(sampletype_f, labid, color_f) %>% 
+  group_by(sampletype_f, labid, color_f, set) %>% 
   mutate(`Mean (%)`= mean(color_pct_recovery)) %>%  
   mutate(`Median (%)` = median(color_pct_recovery)) %>%
   mutate(`SD (%)` = sd(color_pct_recovery)) %>%
@@ -1580,6 +1742,49 @@ kable(n, digits = 2, caption = "Microscopy: Total Particle Recovery by Color. Su
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
   scroll_box(width = "700px", height = "200px")
   
+```
+
+```{r Manuscript Fig S4, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+
+#All Colors
+FigS4 <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  mutate(sampletype_f = case_when(
+    sampletype_f == "Clean Water" ~ "Drinking Water",
+    sampletype_f == "Dirty Water" ~ "Surface Water",
+    sampletype_f == "Fish Tissue" ~ "Fish Tissue",
+    sampletype_f == "Sediment" ~ "Sediment")) %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, color_f) %>% 
+  mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, microscopy_f, color_f, color_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=sampletype_f, y= color_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = sampletype_f, fill = sampletype_f), alpha = 0.7, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~color_f, nrow = 1, scales = "free")+
+  theme(text = element_text(size = 15),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("royalblue", "darksalmon", "goldenrod4")) +   
+  scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Matrix", color = "Matrix") 
+
+plot(FigS4)
+
+saveRDS(FigS4, file = "./Manuscript_Figures/FigS4")
+
 ```
 
 ### Morphology
@@ -1880,6 +2085,48 @@ kable(j, digits = 2, caption = "Microscopy: Total Particle Recovery by Morpholog
   scroll_box(width = "700px", height = "200px")
 ```
 
+```{r Manuscript Fig S5, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+
+FigS5 <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  mutate(sampletype_f = case_when(
+    sampletype_f == "Clean Water" ~ "Drinking Water",
+    sampletype_f == "Dirty Water" ~ "Surface Water",
+    sampletype_f == "Fish Tissue" ~ "Fish Tissue",
+    sampletype_f == "Sediment" ~ "Sediment")) %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, morphology_f) %>% 
+  mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, microscopy_f, morphology_f, morphology_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=sampletype_f, y= morphology_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = sampletype_f, fill = sampletype_f), alpha = 0.7, size = 3) +
+  geom_boxplot(alpha = 0.7,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~morphology_f, ncol = 3, scales = "free")+
+  theme(text = element_text(size = 15),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("royalblue", "darksalmon", "goldenrod4")) +   
+  scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Matrix", color = "Matrix") 
+
+plot(FigS5)
+
+saveRDS(FigS5, file = "./Manuscript_Figures/FigS5")
+
+```
+
 ### Color and Morphology within Size Fraction
 
 The following plots display the recovery (reported count/spiked count (%)) obtained from microscopy. **Reported particle characteristics must match expected particle characteristics of the spiking materials to count towards recovery estimations.** For example, the colors of polymer spiking materials are defined as white, orange, blue, clear and green. Colors outside of these definitions are currently excluded from analysis. 
@@ -2014,6 +2261,92 @@ print(kable(d, digits = 2, caption = paste(df$sizefraction_f[[i]], df$color_f[[i
   cat('\n')
 
  } #Close loop
+
+```
+
+### Team Recov stuff
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10, fig.height = 10}
+#Total - Summary
+c<- Join_Microscopy_Total %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, microscopy_f, total_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid) %>% 
+  mutate(total_pct_recovery_mean = mean(total_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, microscopy_f, total_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=microscopy_f, y= total_pct_recovery_mean)) +
+  theme_test() +
+  geom_rect(ymin = 95.7, ymax = 104.3, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = sampletype_f, fill = sampletype_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 3)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("royalblue", "darksalmon", "goldenrod4")) +   
+  scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "Microscopy", subtitle = "Total Particle Recovery", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(c)
+
+e <- Join_Microscopy_Total %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
+  group_by(sampletype_f, labid) %>% 
+  mutate(mean_lab = mean(total_pct_recovery)) %>% 
+  ungroup() %>%
+  distinct(sampletype_f, labid, mean_lab) %>%
+  group_by(sampletype_f) %>% 
+  mutate(`Mean (%)`= mean(mean_lab)) %>%    
+  mutate(`Median (%)` = median(mean_lab)) %>%
+  mutate(`SD (%)` = sd(mean_lab)) %>%
+  mutate(`SE (%)` = std.error(mean_lab)) %>%
+  mutate(`Min (%)` = min(mean_lab)) %>% 
+  mutate(`Max (%)` = max(mean_lab)) %>%
+  ungroup() %>% 
+  rename("Matrix" = sampletype_f) %>% 
+  select(`Matrix`, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
+  distinct() 
+
+kable(e, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary statistics across all laboratories. Not blank corrected.")%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) #%>% 
+  # scroll_box(width = "700px", height = "200px")
+
+d <- Join_Microscopy_Total %>%
+  filter(sampletype_f != "Dirty Water") %>%
+  filter(plastic_f != "N") %>%
+  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
+  group_by(sampletype_f, labid) %>% 
+  mutate(`Mean (%)`= mean(total_pct_recovery)) %>%  
+  mutate(`Median (%)` = median(total_pct_recovery)) %>%
+  mutate(`SD (%)` = sd(total_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(total_pct_recovery)) %>%
+  mutate(`Min (%)` = min(total_pct_recovery)) %>% 
+  mutate(`Max (%)` = max(total_pct_recovery)) %>%
+  ungroup() %>% 
+  select(sampletype_f, labid, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
+  rename("Matrix" = sampletype_f) %>%  
+  rename("Lab ID" = labid) %>%
+  distinct() 
+
+kable(d, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary statistics by laboratory (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
 
 ```
 
@@ -2227,6 +2560,216 @@ Join_Microscopy_Morphology <- inner_join(morphologysumresults, morphologyspikeco
 
 ```
 
+## Counts
+
+The following section describes data as absolute particle counts that were reported in each sample. Note that Dirty Water samples were not spiked with any particles less than 212µm and are therefore distinct from the other matrices.  
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10}
+
+spike <- Join_Microscopy_Total %>%
+  #Remove spiked particles with problematic RSD
+  filter(!(labid == "R" & sampletype_f == "Clean Water")) %>% 
+  filter(plastic_f != "N") %>% 
+  ungroup() %>%
+  group_by(sampletype_f) %>% 
+  mutate(mean_spike = mean(total_spike)) 
+
+#Total - By Lab
+
+a <- Results_Clean_Microscopy %>% 
+  #Data manipulation
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blanks
+  group_by(labid, sampleid, total, expertise, sampletype_f) %>% 
+  summarise() %>% 
+  ungroup() %>% 
+  mutate(labid = fct_reorder(labid, expertise)) %>%   
+  #Creating plot
+  ggplot(aes(x= labid, y= total)) +
+  theme_test() +
+  geom_point(aes(color = as.factor(expertise), fill = as.factor(expertise)), alpha = 0.7, width = .05, size = 3) +
+  geom_hline(data = spike, aes(yintercept = mean_spike), linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "right",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  scale_color_manual(values = c("royalblue", "darkcyan", "darkblue", "orchid"))+
+  facet_wrap(~sampletype_f, ncol = 2)+
+  expand_limits(y = 0) +
+  labs(x = "Labs", y = "Particle Count", fill = "Experience", color = "Experience", title = "Microscopy", subtitle = "Raw Particle Count", caption = "Points represent individual samples spiked with microplastic particles.\nDotted line represents the number of spiked polymer particles.\nNot blank corrected.")
+
+plot(a)
+
+b <- Results_Clean_Microscopy %>% 
+  filter(blank != "Y") %>% 
+  select(sampletype_f, labid, sampleid, total) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Lab ID" = labid) %>%
+  rename("Sample ID" = sampleid) %>%
+  rename("Total Particles" = total) %>%
+  distinct() 
+
+kable(b, digits = 2, caption = "Raw Particle Count. Summary statistics by sample (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+#Total - Summary
+c <- Results_Clean_Microscopy %>%  
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blanks
+  group_by(labid, set, sampleid, microscopy_f, total, sampletype_f) %>% 
+  summarise() %>% 
+  group_by(labid) %>% 
+  mutate(total_mean = mean(total)) %>% 
+  ungroup() %>% 
+  group_by(labid, microscopy_f, total_mean, sampletype_f) %>% 
+  summarise() %>%   
+  #Creating plot
+  ggplot(aes(x=microscopy_f, y= total_mean)) +
+  theme_test() +
+  geom_point(aes(color = microscopy_f, fill = microscopy_f, alpha = 0.7), width = .05, size = 3) +
+  geom_hline(data = spike, aes(yintercept = mean_spike), linetype = "dotted")+
+  geom_boxplot(alpha = 0.5,aes(color = microscopy_f, fill = microscopy_f), outlier.shape = NA) +
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("darkmagenta")) +
+  scale_fill_manual(values = c("darkmagenta")) +
+  facet_wrap(~sampletype_f, ncol = 2)+
+  expand_limits(y = 0) +
+  labs(y = "Particle Count", fill = "Lab", title = "Microscopy", subtitle = "Raw Particle Count", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line represents the number of spiked polymer particles.\nNot blank corrected.")
+  
+plot(c)
+
+d <- Results_Clean_Microscopy %>% 
+  filter(blank != "Y") %>% 
+  group_by(sampletype_f, labid, set, total) %>% 
+  summarise() %>% 
+  mutate(`Mean`= mean(total)) %>%  
+  mutate(`Median` = median(total)) %>%
+  mutate(`SD` = sd(total)) %>%
+  mutate(`Min` = min(total)) %>% 
+  mutate(`Max` = max(total)) %>%
+  ungroup() %>% 
+  select(sampletype_f, labid, `Mean`, `Median`, `SD`, `Min`, `Max`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Lab ID" = labid) %>%
+  distinct() 
+
+kable(d, digits = 2, caption = "Raw Particle Count. Summary statistics by laboratory (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+e <- Results_Clean_Microscopy %>%  
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blanks
+  group_by(sampletype_f, labid, set, total) %>% 
+  summarise() %>% 
+  mutate(total_mean = mean(total)) %>% 
+  ungroup() %>% 
+  distinct(sampletype_f, labid, total_mean) %>%
+  group_by(sampletype_f) %>% 
+  mutate(`Mean`= mean(total_mean)) %>%  
+  mutate(`Median` = median(total_mean)) %>%
+  mutate(`SD` = sd(total_mean)) %>%
+  mutate(`Min` = min(total_mean)) %>% 
+  mutate(`Max` = max(total_mean)) %>%
+  ungroup() %>% 
+  select(sampletype_f, `Mean`, `Median`, `SD`, `Min`, `Max`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  distinct() 
+
+kable(e, digits = 2, caption = "Raw Particle Count. Global summary statistics. Not blank corrected.")%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+#Size Fraction Count
+f <- Results_Clean_Microscopy %>%  
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blanks
+  group_by(sampletype_f, sizefraction_f, labid, set, total_sizefraction) %>% 
+  summarise() %>% 
+  mutate(total_mean = mean(total_sizefraction)) %>% 
+  ungroup() %>% 
+  distinct(sampletype_f, sizefraction_f, labid, total_mean) %>%
+  group_by(sampletype_f, sizefraction_f) %>% 
+  mutate(`Mean`= mean(total_mean)) %>%  
+  mutate(`Median` = median(total_mean)) %>%
+  mutate(`SD` = sd(total_mean)) %>%
+  mutate(`Min` = min(total_mean)) %>% 
+  mutate(`Max` = max(total_mean)) %>%
+  ungroup() %>% 
+  select(sampletype_f, sizefraction_f, `Mean`, `Median`, `SD`, `Min`, `Max`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Size Fraction" = sizefraction_f) %>%
+  distinct() 
+
+kable(f, digits = 2, caption = "Raw Particle Count: Size Fraction. Global summary statistics. Not blank corrected.")%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+#Color Count
+g <- Results_Clean_Microscopy %>%  
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blanks
+  group_by(sampletype_f, color_f, labid, set, total_color) %>% 
+  summarise() %>% 
+  mutate(total_mean = mean(total_color)) %>% 
+  ungroup() %>% 
+  distinct(sampletype_f, color_f, labid, total_mean) %>%
+  group_by(sampletype_f, color_f) %>% 
+  mutate(`Mean`= mean(total_mean)) %>%  
+  mutate(`Median` = median(total_mean)) %>%
+  mutate(`SD` = sd(total_mean)) %>%
+  mutate(`Min` = min(total_mean)) %>% 
+  mutate(`Max` = max(total_mean)) %>%
+  ungroup() %>% 
+  select(sampletype_f, color_f, `Mean`, `Median`, `SD`, `Min`, `Max`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Color" = color_f) %>%
+  distinct() 
+
+kable(g, digits = 2, caption = "Raw Particle Count: Color. Global summary statistics. Not blank corrected.")%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+#Morphology Count
+h <- Results_Clean_Microscopy %>%  
+  filter(!grepl("4", sampleid)) %>%
+  filter(!grepl("8", sampleid)) %>% #Dropping blanks
+  group_by(sampletype_f, morphology_f, labid, set, total_morphology) %>% 
+  summarise() %>% 
+  mutate(total_mean = mean(total_morphology)) %>% 
+  ungroup() %>% 
+  distinct(sampletype_f, morphology_f, labid, total_mean) %>%
+  group_by(sampletype_f, morphology_f) %>% 
+  mutate(`Mean`= mean(total_mean)) %>%  
+  mutate(`Median` = median(total_mean)) %>%
+  mutate(`SD` = sd(total_mean)) %>%
+  mutate(`Min` = min(total_mean)) %>% 
+  mutate(`Max` = max(total_mean)) %>%
+  ungroup() %>% 
+  select(sampletype_f, morphology_f, `Mean`, `Median`, `SD`, `Min`, `Max`) %>%
+  rename("Matrix" = sampletype_f) %>%
+  rename("Morphology" = morphology_f) %>%
+  distinct() 
+
+kable(h, digits = 2, caption = "Raw Particle Count: Morphology. Global summary statistics. Not blank corrected.")%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+
 ## Recovery
 
 The following plots display the recovery (reported count/spiked count (%)) obtained from microscopy. **Reported particle characteristics must match expected particle characteristics of the spiking materials to count towards recovery estimations.** For example, the colors of polymer spiking materials are defined as white, orange, blue, clear and green. Colors outside of these definitions are not included in this section (see Counts). 
@@ -2355,8 +2898,10 @@ d <- Join_Microscopy_Total %>%
   mutate(`SE (%)` = std.error(total_pct_recovery)) %>%
   mutate(`Min (%)` = min(total_pct_recovery)) %>% 
   mutate(`Max (%)` = max(total_pct_recovery)) %>%
-  ungroup() %>% 
-  select(sampletype_f, labid, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
+  ungroup() %>%
+  group_by(sampletype_f) %>% 
+  mutate(mean_se = mean(`SE (%)`, na.rm = TRUE)) %>% 
+  select(sampletype_f, labid, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`, mean_se) %>%
   rename("Matrix" = sampletype_f) %>%  
   rename("Lab ID" = labid) %>%
   distinct() 
@@ -2387,6 +2932,84 @@ e <- Join_Microscopy_Total %>%
 kable(e, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary statistics across all laboratories. Not blank corrected.")%>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
   scroll_box(width = "700px", height = "200px")
+```
+
+```{r Manuscript Fig 2, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+
+#Total - Summary
+Fig2<- Join_Microscopy_Total %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
+  filter(plastic_f != "N") %>%
+  mutate(sampletype_f = case_when(
+    sampletype_f == "Clean Water" ~ "Drinking Water",
+    sampletype_f == "Dirty Water" ~ "Surface Water",
+    sampletype_f == "Fish Tissue" ~ "Fish Tissue",
+    sampletype_f == "Sediment" ~ "Sediment")) %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, total_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid) %>% 
+  mutate(total_pct_recovery_mean = mean(total_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, microscopy_f, total_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=sampletype_f, y= total_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = sampletype_f, fill = sampletype_f, alpha = 0.7), size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  theme(text = element_text(size = 15),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("royalblue", "darksalmon", "goldenrod4", "forestgreen")) +   
+  scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4", "forestgreen")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", title = "> 212 µm")
+
+plot(Fig2)
+
+saveRDS(Fig2, file = "./Manuscript_Figures/Fig2")
+
+```
+
+```{r Manuscript Fig S2, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+
+#Total - By Lab
+FigS2 <- Join_Microscopy_Total %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
+  filter(plastic_f != "N") %>%
+  ungroup() %>% 
+  mutate(sampletype_f = case_when(
+    sampletype_f == "Clean Water" ~ "Drinking Water",
+    sampletype_f == "Dirty Water" ~ "Surface Water",
+    sampletype_f == "Fish Tissue" ~ "Fish Tissue",
+    sampletype_f == "Sediment" ~ "Sediment")) %>%
+  #Creating plot
+  ggplot(aes(x=labid, y= total_pct_recovery)) +
+  theme_test() +
+  geom_point(aes(color = sampletype_f, fill = sampletype_f, alpha = 0.7), size = 3) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
+  stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
+  facet_wrap(~sampletype_f, ncol = 2)+
+  theme(text = element_text(size = 15),
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+        axis.ticks.x = element_blank())+
+  scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4", "forestgreen"))+
+  scale_color_manual(values = c("royalblue", "darksalmon", "goldenrod4", "forestgreen"))+
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", x = "Lab", title = "> 212 µm")
+
+plot(FigS2)
+
+saveRDS(FigS2, file = "./Manuscript_Figures/FigS2")
+
 ```
 
 ### Size Fraction
@@ -2616,6 +3239,51 @@ l <- k %>%
 kable(l, digits = 2, caption = "Microscopy: Total Particle Recovery by Size Fraction. Summary statistics across all laboratories. Not blank corrected.") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
   scroll_box(width = "700px", height = "200px")
+
+```
+
+```{r Manuscript Fig S6, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+
+#All Size Fractions
+FigS6 <- Join_Microscopy_SizeFraction %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
+  filter(plastic_f != "N") %>%
+  ungroup() %>%
+  mutate(sampletype_f = case_when(
+    sampletype_f == "Clean Water" ~ "Drinking Water",
+    sampletype_f == "Dirty Water" ~ "Surface Water",
+    sampletype_f == "Fish Tissue" ~ "Fish Tissue",
+    sampletype_f == "Sediment" ~ "Sediment")) %>%
+  #Force size fractions to be in the correct order
+  mutate(sizefraction_f = factor(sizefraction_f, levels = c("212-500 µm",">500 µm"))) %>% 
+  #Data manipulation
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, sizefraction_f, sizefrac_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, sizefraction_f) %>% 
+  mutate(sizefrac_pct_recovery_mean = mean(sizefrac_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, microscopy_f, sizefraction_f, sizefrac_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=sampletype_f, y= sizefrac_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = sampletype_f, fill = sampletype_f), alpha = 0.7, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sizefraction_f, nrow = 1, scales = "free")+
+  theme(text = element_text(size = 15),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("royalblue", "darksalmon", "goldenrod4", "forestgreen")) +   
+  scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4", "forestgreen")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Matrix", color = "Matrix")
+
+plot(FigS6)
+
+saveRDS(FigS6, file = "./Manuscript_Figures/FigS6")
 
 ```
 
@@ -3034,6 +3702,48 @@ kable(n, digits = 2, caption = "Microscopy: Total Particle Recovery by Color. Su
   
 ```
 
+```{r Manuscript Fig S7, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+
+#All Colors
+FigS7 <- Join_Microscopy_Color %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
+  filter(plastic_f != "N") %>%
+  mutate(sampletype_f = case_when(
+    sampletype_f == "Clean Water" ~ "Drinking Water",
+    sampletype_f == "Dirty Water" ~ "Surface Water",
+    sampletype_f == "Fish Tissue" ~ "Fish Tissue",
+    sampletype_f == "Sediment" ~ "Sediment")) %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, color_f, color_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, color_f) %>% 
+  mutate(color_pct_recovery_mean = mean(color_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, microscopy_f, color_f, color_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=sampletype_f, y= color_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = sampletype_f, fill = sampletype_f), alpha = 0.7, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~color_f, nrow = 1, scales = "free")+
+  theme(text = element_text(size = 15),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("royalblue", "darksalmon", "goldenrod4", "forestgreen")) +   
+  scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4", "forestgreen")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Matrix", color = "Matrix") 
+
+plot(FigS7)
+
+saveRDS(FigS7, file = "./Manuscript_Figures/FigS7")
+
+```
+
 ### Morphology
 
 ```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10}
@@ -3325,6 +4035,47 @@ kable(j, digits = 2, caption = "Microscopy: Total Particle Recovery by Morpholog
   scroll_box(width = "700px", height = "200px")
 ```
 
+```{r Manuscript Fig S8, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+
+FigS8 <- Join_Microscopy_Morphology %>%
+  filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
+  filter(plastic_f != "N") %>%
+  mutate(sampletype_f = case_when(
+    sampletype_f == "Clean Water" ~ "Drinking Water",
+    sampletype_f == "Dirty Water" ~ "Surface Water",
+    sampletype_f == "Fish Tissue" ~ "Fish Tissue",
+    sampletype_f == "Sediment" ~ "Sediment")) %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, set, sampleid, microscopy_f, morphology_f, morphology_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid, morphology_f) %>% 
+  mutate(morphology_pct_recovery_mean = mean(morphology_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, microscopy_f, morphology_f, morphology_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=sampletype_f, y= morphology_pct_recovery_mean)) +
+  theme_test() +
+  geom_point(aes(color = sampletype_f, fill = sampletype_f), alpha = 0.7, size = 3) +
+  geom_boxplot(alpha = 0.7,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~morphology_f, ncol = 3, scales = "free")+
+  theme(text = element_text(size = 15),
+        legend.position = "right",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("royalblue", "darksalmon", "goldenrod4", "forestgreen")) +   
+  scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4", "forestgreen")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Matrix", color = "Matrix") 
+
+plot(FigS8)
+
+saveRDS(FigS8, file = "./Manuscript_Figures/FigS8")
+
+```
+
 ### Color and Morphology within Size Fraction
 
 The following plots display the recovery (reported count/spiked count (%)) obtained from microscopy. **Reported particle characteristics must match expected particle characteristics of the spiking materials to count towards recovery estimations.** For example, the colors of polymer spiking materials are defined as white, orange, blue, clear and green. Colors outside of these definitions are currently excluded from analysis. 
@@ -3461,3 +4212,122 @@ print(kable(d, digits = 2, caption = paste(df$sizefraction_f[[i]], df$color_f[[i
  } #Close loop
 
 ```
+
+# Performance By Sample Number
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, results = 'asis', fig.height = 10}
+
+library(ggpubr)
+
+df <- Join_Microscopy_Total %>% 
+  group_by(sampletype_f) %>% 
+  summarise()
+
+for (i in 1:nrow(df))
+
+{ #Open loop
+
+a <- Join_Microscopy_Total %>%
+  filter(sampletype_f == df$sampletype_f[[i]],
+         plastic_f == "Y") %>%
+  mutate(sample_number = as.numeric(str_extract(sampleid, "\\d"))) %>% 
+  group_by(labid) %>% 
+  filter(n()>2)
+  
+b <- ggscatter(a, x = "sample_number", y = "total_pct_recovery", 
+            add = "reg.line", conf.int = TRUE, 
+            cor.coef = TRUE, cor.method = "spearman")+ 
+     facet_wrap(~labid, scales = "free")+
+     theme_test()+
+     labs(x = "Sample Number", y = "Recovery (%)", title = paste(df$sampletype_f[[i]]),
+          subtitle = "Spearman's Rank-Order Correlation of Recovery by Sample Number within Lab")
+
+plot(b)
+
+} #Close loop
+
+```
+
+### Team Recov stuff
+
+```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10, fig.height = 10}
+#Total - Summary
+c<- Join_Microscopy_Total %>%
+  filter(plastic_f != "N") %>%
+  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
+  #Data manipulation
+  group_by(sampletype_f, labid, sampleid, microscopy_f, total_pct_recovery) %>% 
+  summarise() %>% 
+  group_by(sampletype_f, labid) %>% 
+  mutate(total_pct_recovery_mean = mean(total_pct_recovery)) %>% 
+  ungroup() %>% 
+  group_by(sampletype_f, labid, microscopy_f, total_pct_recovery_mean) %>% 
+  summarise() %>% 
+  #Creating plot
+  ggplot(aes(x=microscopy_f, y= total_pct_recovery_mean)) +
+  theme_test() +
+  geom_rect(ymin = 95.7, ymax = 104.3, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
+  geom_point(aes(color = sampletype_f, fill = sampletype_f, alpha = 0.7), width = .05, size = 3) +
+  geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
+  geom_hline(yintercept = 100, linetype = "dotted")+
+  facet_wrap(~sampletype_f, ncol = 4)+
+  theme(text = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank())+
+  scale_color_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4")) +   
+  scale_fill_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4")) +
+  expand_limits(y = 0) +
+  labs(y = "Recovery (%)", fill = "Lab", title = "Microscopy", subtitle = "Total Particle Recovery", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
+
+plot(c)
+
+e <- Join_Microscopy_Total %>%
+  filter(plastic_f != "N") %>%
+  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
+  group_by(sampletype_f, labid) %>% 
+  mutate(mean_lab = mean(total_pct_recovery)) %>% 
+  ungroup() %>%
+  distinct(sampletype_f, labid, mean_lab) %>%
+  group_by(sampletype_f) %>% 
+  mutate(`Mean (%)`= mean(mean_lab)) %>%    
+  mutate(`Median (%)` = median(mean_lab)) %>%
+  mutate(`SD (%)` = sd(mean_lab)) %>%
+  mutate(`SE (%)` = std.error(mean_lab)) %>%
+  mutate(`Min (%)` = min(mean_lab)) %>% 
+  mutate(`Max (%)` = max(mean_lab)) %>%
+  ungroup() %>% 
+  rename("Matrix" = sampletype_f) %>% 
+  select(`Matrix`, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
+  distinct() 
+
+kable(e, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary statistics across all laboratories. Not blank corrected.")%>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) #%>% 
+  # scroll_box(width = "700px", height = "200px")
+
+d <- Join_Microscopy_Total %>%
+  filter(plastic_f != "N") %>%
+  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
+  group_by(sampletype_f, labid) %>% 
+  mutate(`Mean (%)`= mean(total_pct_recovery)) %>%  
+  mutate(`Median (%)` = median(total_pct_recovery)) %>%
+  mutate(`SD (%)` = sd(total_pct_recovery)) %>%
+  mutate(`SE (%)` = std.error(total_pct_recovery)) %>%
+  mutate(`Min (%)` = min(total_pct_recovery)) %>% 
+  mutate(`Max (%)` = max(total_pct_recovery)) %>%
+  ungroup() %>% 
+  select(sampletype_f, labid, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
+  rename("Matrix" = sampletype_f) %>%  
+  rename("Lab ID" = labid) %>%
+  distinct() 
+
+kable(d, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary statistics by laboratory (n = 1-3 samples). Not blank corrected.") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+End of Analysis. 

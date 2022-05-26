@@ -30,6 +30,17 @@ Cost <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_costresu
 ```{r Data Cleaning and Filtering, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 
 Cost_Clean <- Cost %>%
+  #Removed lab D - incomparable with other data - deviation from methods
+  filter(!(labid == "D"&matrix == "CW")) %>%
+  #Removed pygcms data data
+  filter(!(labid == "T"&matrix == "CW")) %>%
+  filter(!(labid == "F"&matrix == "CW")) %>%
+  #Removed labs that submitted clean water data late (want to match with original clean water data analysis)
+  filter(!(labid == "WW"&matrix == "CW")) %>%
+  filter(!(labid == "NN"&matrix == "CW")) %>%
+  #Exclude augmentation data
+  filter(!(labid %in% c("R","D", "L") & matrix %in% c("SD"))) %>% 
+  filter(!(labid %in% c("L") & matrix %in% c("FT"))) %>% 
   filter(!grepl("Other", instrumenttype))%>%  # Remove instrument named 'other' so we are just comparing the 5 main instruments
   filter(!grepl("99", objectid))%>% # Remove lab that has -88 for both instrument and consumables cost
   filter(!grepl("123", objectid))%>% # Remove lab that has -88 for both instrument and consumables cost
@@ -85,11 +96,10 @@ Table1 <- Cost_Clean_1 %>%
   mutate(SD = sd (instrumentcost)) %>% 
   mutate(Mean = mean(instrumentcost)) %>%
   ungroup() %>%
-  group_by(matrix_f, instrumenttype, instrumentcost, Mean, SD) %>%
+  group_by(matrix_f, instrumenttype, Mean, SD) %>%
   summarise() %>%
   rename("Matrix" = matrix_f) %>% 
-  rename("Instrument" = instrumenttype) %>%
-  rename("Cost" = instrumentcost)
+  rename("Instrument" = instrumenttype) 
 
  kable(Table1, digits = 0, caption = "Instrument Cost (USD). Summary statistics.") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
@@ -129,12 +139,10 @@ Table2 <- Cost_Clean_2 %>%
   mutate(SD = sd (consumables)) %>% 
   mutate(Mean = mean(consumables)) %>%
   ungroup() %>%
-  group_by(matrix_f, instrumenttype, consumables, Mean, SD) %>%
+  group_by(matrix_f, instrumenttype, Mean, SD) %>%
   summarise() %>%
   rename("Matrix" = matrix_f) %>%
-  rename("Instrument" = instrumenttype) %>%
-  rename("Cost" = consumables)
-  
+  rename("Instrument" = instrumenttype) 
 
  kable(Table2, digits = 0, caption = "Consumables Cost (USD). Summary statistics.") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
@@ -277,3 +285,5 @@ Summary_R <- Raman %>%
   scroll_box(width = "700px", height = "400px")
  
 ```
+
+End of Analysis.
