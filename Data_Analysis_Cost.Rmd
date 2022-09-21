@@ -9,7 +9,7 @@ output:
     number_sections: true
     toc_float: true
 ---
-![](../www/logobanner.png)
+![](www/logobanner.png)
 
 ```{r Install Packages, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 

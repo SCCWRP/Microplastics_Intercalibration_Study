@@ -10,7 +10,7 @@ output:
     toc_float: true
 ---
 
-![](./www/logobanner.png)
+![](www/logobanner.png)
 
 ```{r Packages, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 

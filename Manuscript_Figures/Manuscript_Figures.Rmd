@@ -1,0 +1,180 @@
+---
+title: "Manuscript Figures"
+author: "Leah Thornton Hampton"
+date: "4/11/2022"
+output: html_document
+---
+
+```{r Libraries, message=FALSE}
+
+library(tidyverse)
+library(ggpubr)
+
+```
+
+#Main Manuscript
+
+```{r, Figure 1-}
+
+#Average recovery for clean water, fish tissue and sediment; > 20um and <20um
+
+A <- readRDS("./Manuscript_Figures/Fig1A") #Matrix_Comparisons_Microscopy_Less20.Rmd
+B <- readRDS("./Manuscript_Figures/Fig1B") #Matrix_Comparisons_Microscopy_Greater20.Rmd
+C <- readRDS("./Manuscript_Figures/Fig1C") #Matrix_Comparisons_Microscopy.Rmd
+
+Fig1 <- ggarrange(A,B,C, ncol = 1, labels = c("A", "B", "C"), font.label = list(size = 27),
+                  vjust = 3.25, hjust = -3.75)
+            
+plot(Fig1)
+
+ggsave(filename = "Fig1.jpeg",
+       path = "./Manuscript_Figures/", 
+       plot = Fig1, width = 8, height = 16, units = "in")
+
+```
+
+```{r, Figure 2}
+
+Fig2 <- readRDS("./Manuscript_Figures/Fig2") #Matrix_Comparisons_FTIR.Rmd
+
+plot(Fig2)
+
+ggsave(filename = "Fig2.jpeg",
+       path = "./Manuscript_Figures/", 
+       plot = Fig2, width = 12, height = 7, units = "in")
+
+```
+
+#Supplement
+
+```{r, Figure S2}
+
+#Average particle counts in blanks - all matrices
+
+FigS2 <- readRDS("./Manuscript_Figures/FigS2") #Matrix_Comparisons_Microscopy.Rmd
+
+plot(FigS2)
+
+ggsave(filename = "FigS2.jpeg",
+       path = "./Manuscript_Figures/", 
+       plot = FigS2, width = 12, height = 8, units = "in")
+
+```
+
+```{r, Figure S5}
+
+#Average recovery for clean water, fish tissue and sediment by lab; > 20um and <20um
+
+A <- readRDS("./Manuscript_Figures/FigS5A") #Matrix_Comparisons_Microscopy_Less20.Rmd
+B <- readRDS("./Manuscript_Figures/FigS5B") #Matrix_Comparisons_Microscopy_Greater20.Rmd
+
+
+FigS5 <- ggarrange(A,B, ncol = 1, nrow = 2, labels = c("A", "B"), font.label = list(size = 18))
+            
+plot(FigS5)
+
+ggsave(filename = "FigS5.jpeg",
+       path = "./Manuscript_Figures/", 
+       plot = FigS5, width = 16, height = 12, units = "in")
+
+```
+
+```{r, Figure S7}
+
+#Average recovery for clean water, fish tissue and sediment by size fraction
+
+FigS7 <- readRDS("./Manuscript_Figures/FigS7") #Matrix_Comparisons_Microscopy.Rmd
+
+plot(FigS7)
+
+ggsave(filename = "FigS7.jpeg",
+       path = "./Manuscript_Figures/", 
+       plot = FigS7, width = 12, height = 8, units = "in")
+
+```
+
+```{r, Figure S8}
+
+#Average recovery for clean water, fish tissue and sediment by color
+
+FigS8 <- readRDS("./Manuscript_Figures/FigS8") #Matrix_Comparisons_Microscopy.Rmd
+
+plot(FigS8)
+
+ggsave(filename = "FigS8.jpeg",
+       path = "./Manuscript_Figures/", 
+       plot = FigS8, width = 12, height = 8, units = "in")
+
+```
+
+```{r, Figure S9}
+
+#Average recovery for clean water, fish tissue and sediment by morphology
+
+FigS9 <- readRDS("./Manuscript_Figures/FigS9") #Matrix_Comparisons_Microscopy.Rmd
+
+plot(FigS9)
+
+ggsave(filename = "FigS9.jpeg",
+       path = "./Manuscript_Figures/", 
+       plot = FigS9, width = 12, height = 8, units = "in")
+
+```
+
+```{r, Figure S10}
+
+#Average recovery for clean water, dirty water, fish tissue, and sediment; > 212um
+
+FigS10 <- readRDS("./Manuscript_Figures/FigS10") #Matrix_Comparisons_Microscopy.Rmd
+
+plot(FigS10)
+
+ggsave(filename = "FigS10.jpeg",
+       path = "./Manuscript_Figures/", 
+       plot = FigS10, width = 12, height = 8, units = "in")
+
+```
+
+```{r, Figure S11}
+
+#Average recovery for clean water, dirty water, fish tissue and sediment by size fraction
+
+FigS11 <- readRDS("./Manuscript_Figures/FigS11") #Matrix_Comparisons_Microscopy.Rmd
+
+plot(FigS11)
+
+ggsave(filename = "FigS11.jpeg",
+       path = "./Manuscript_Figures/", 
+       plot = FigS11, width = 12, height = 8, units = "in")
+
+```
+
+```{r, Figure S12}
+
+#Average recovery for clean water, dirty water, fish tissue and sediment by color
+
+FigS12 <- readRDS("./Manuscript_Figures/FigS12") #Matrix_Comparisons_Microscopy.Rmd
+
+plot(FigS12)
+
+ggsave(filename = "FigS12.jpeg",
+       path = "./Manuscript_Figures/", 
+       plot = FigS12, width = 12, height = 8, units = "in")
+
+```
+
+```{r, Figure S13}
+
+#Average recovery for clean water, dirty water, fish tissue and sediment by morphology
+
+FigS13 <- readRDS("./Manuscript_Figures/FigS13") #Matrix_Comparisons_Microscopy.Rmd
+
+plot(FigS13)
+
+ggsave(filename = "FigS13.jpeg",
+       path = "./Manuscript_Figures/", 
+       plot = FigS13, width = 12, height = 8, units = "in")
+
+```
+
+End of Analysis.

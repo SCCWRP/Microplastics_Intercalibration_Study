@@ -10,7 +10,7 @@ output:
     toc_float: true
 ---
 
-![](../www/logobanner.png)
+![](www/logobanner.png)
 
 ```{r Packages, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 
@@ -66,6 +66,15 @@ Results <- Results %>%
 Reference <- read_csv('https://mpchecker.sccwrp.org/checker/export?table=sample_spiking_info', guess_max = 100000) #Import .csv file containing all reference spiking information for all matrices including clean water
 
 QA <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_qa_master")
+
+```
+
+```{r echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#Temporary fix to indicate that ALL particles were analyzed via Raman for Fish Tissue for Lab BB - Submission Error
+
+Results <- Results %>% 
+  mutate(raman = if_else(labid == "BB" & sampletype == "FT", "Yes", raman))
 
 ```
 
@@ -236,11 +245,10 @@ compare
 
 ```
 
-#### Manuscript Fig 4
 
 ```{r echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
 
-Fig4 <-  Raman_FTIR %>%
+Fig2 <-  Raman_FTIR %>%
    mutate(sampletype_f = case_when(
     sampletype_f == "Clean Water" ~ "Drinking Water",
     sampletype_f == "Dirty Water" ~ "Surface Water",
@@ -250,21 +258,21 @@ Fig4 <-  Raman_FTIR %>%
    theme_test() +
    geom_col(aes(alpha = correct), stat = 'identity', 
             position = position_fill(reverse = TRUE), color = "black") +
-   geom_text(aes(y = label_y, label = n), size = 4.5)+
+   geom_text(aes(y = ifelse(label_y < .98, label_y, 1.03), label = n), size = 7)+
    facet_wrap(~sampletype_f, ncol = 4)+
-   ylim(0,1)+
-   theme(text = element_text(size = 15),
+   theme(text = element_text(size = 20),
         legend.position = "right",
         axis.title.x = element_blank(),
         axis.ticks.x = element_blank())+
+   guides(alpha = guide_legend(reverse=TRUE)) +
    scale_fill_manual(values = c("royalblue", "darksalmon", "goldenrod4", "forestgreen"), guide = FALSE) +
-   scale_y_continuous(labels = scales::percent, expand = c(0,0), limits = c(0,1.02))+
-   labs(x = 'Method', y = "Proportion of Particles\nCorrectly Identified", alpha = "Identification") +
+   scale_y_continuous(labels = scales::percent, expand = c(0,0), limits = c(0,1.07))+
+   labs(x = 'Method', y = "Particles Identified", alpha = "Identification") +
    scale_alpha_manual(values = c(1,0.25))
    
-Fig4
+Fig2
 
-saveRDS(Fig4, file = "./Manuscript_Figures/Fig4")
+saveRDS(Fig2, file = "./Manuscript_Figures/Fig2")
 
 ```
 
@@ -587,47 +595,6 @@ b <- Accuracy_Lab %>%
 kable(b, digits = 2, caption = "Size Fraction Accuracy, FTIR") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
   scroll_box(width = "700px", height = "200px")
-
-```
-
-#### Manuscript Fig S9
-
-```{r}
-
-FigS9 <- Results_Spike_FTIR %>%
-   filter(!length == -88) %>%
-   mutate(length = length*1000) %>% 
-   group_by(sampletype_f, length) %>% 
-   count(qa_correctchemid_ftir == "y") %>%
-   mutate(prop = prop.table(n)) %>% 
-   as.data.frame() %>%   
-   rename("correct" = `qa_correctchemid_ftir == "y"`) %>% 
-   replace_na(list(correct = FALSE)) %>%
-   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
-                             correct == "FALSE" ~ "Incorrect")) %>% 
-   ggplot(aes(x = length, alpha = correct, fill = sampletype_f))+
-   geom_histogram(bins = 75, color = "gray40") +
-   facet_wrap(~sampletype_f)+
-   scale_x_log10() +
-   annotation_logticks(sides = "b", outside = TRUE) +
-   theme_test() +
-   theme(text = element_text(size = 15),
-        plot.title = element_text(hjust = 0.5),
-        panel.spacing.y = unit(0.75, "lines"),
-        legend.position = "right",
-        axis.ticks.x = element_blank(),
-        axis.text.x = element_text(vjust = -2),
-        axis.title.x = element_text(vjust = -1.5),
-        plot.margin = margin(10,10,15,10))+
-   scale_fill_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"), guide = "none") +
-   labs(title = "FTIR", y = "Number of Particles", x = "Measured Particle Length (µm)", alpha = "Identification")+
-   scale_alpha_manual(values = c(1,0.25)) +
-   scale_y_continuous(limits = c(0,50), expand = c(0,0)) +
-   coord_cartesian(clip = "off")
-  
-plot(FigS9)
-
-saveRDS(FigS9, file = "./Manuscript_Figures/FigS9")
 
 ```
 

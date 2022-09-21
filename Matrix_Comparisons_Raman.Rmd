@@ -10,7 +10,7 @@ output:
     toc_float: true
 ---
 
-![](../www/logobanner.png)
+![](www/logobanner.png)
 
 ```{r Packages, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 
@@ -66,6 +66,15 @@ Results <- Results %>%
 Reference <- read_csv('https://mpchecker.sccwrp.org/checker/export?table=sample_spiking_info', guess_max = 100000) #Import .csv file containing all reference spiking information for all matrices including clean water
 
 QA <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_qa_master")
+
+```
+
+```{r echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+#Temporary fix to indicate that ALL particles were analyzed via Raman for Fish Tissue for Lab BB - Submission Error
+
+Results <- Results %>% 
+  mutate(raman = if_else(labid == "BB" & sampletype == "FT", "Yes", raman))
 
 ```
 
@@ -559,47 +568,6 @@ b <- Accuracy_Lab %>%
 kable(b, digits = 2, caption = "Size Fraction Accuracy, Raman") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
   scroll_box(width = "700px", height = "200px")
-
-```
-
-#### Manuscript Fig S10
-
-```{r, include=FALSE}
-
-FigS10 <- Results_Spike_Raman %>%
-   filter(!length == -88) %>%
-   mutate(length = length*1000) %>% 
-   group_by(sampletype_f, length) %>% 
-   count(qa_correctchemid_raman == "y") %>%
-   mutate(prop = prop.table(n)) %>% 
-   as.data.frame() %>%   
-   rename("correct" = `qa_correctchemid_raman == "y"`) %>% 
-   replace_na(list(correct = FALSE)) %>%
-   mutate(correct = case_when(correct == "TRUE" ~ "Correct",
-                             correct == "FALSE" ~ "Incorrect")) %>% 
-   ggplot(aes(x = length, alpha = correct, fill = sampletype_f))+
-   geom_histogram(bins = 75, color = "gray40") +
-   facet_wrap(~sampletype_f)+
-   scale_x_log10() +
-   annotation_logticks(sides = "b", outside = TRUE) +
-   theme_test() +
-   theme(text = element_text(size = 15),
-        plot.title = element_text(hjust = 0.5),
-        panel.spacing.y = unit(0.75, "lines"),
-        legend.position = "right",
-        axis.ticks.x = element_blank(),
-        axis.text.x = element_text(vjust = -2),
-        axis.title.x = element_text(vjust = -1.5),
-        plot.margin = margin(10,10,15,10))+
-   scale_fill_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4"), guide = "none") +
-   labs(title = "Raman", y = "Number of Particles", x = "Measured Particle Length (µm)", alpha = "Identification")+
-   scale_alpha_manual(values = c(1,0.25)) +
-   scale_y_continuous(limits = c(0,80), expand = c(0,0)) +
-   coord_cartesian(clip = "off")
-  
-plot(FigS10)
-
-saveRDS(FigS10, file = "./Manuscript_Figures/FigS10")
 
 ```
 

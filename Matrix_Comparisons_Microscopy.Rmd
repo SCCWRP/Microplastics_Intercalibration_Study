@@ -10,7 +10,7 @@ output:
     toc_float: true
 ---
 
-![](../www/logobanner.png)
+![](www/logobanner.png)
 
 ```{r Packages, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 
@@ -24,6 +24,7 @@ library(cowplot) #Needed to combine plots
 library(kableExtra) #Needed for table features (i.e., scroll_box)
 library(forcats) #Needed for reordering axes
 library(plotrix) #Needed for std.error fxn
+library(Steel.Dwass.test) #steeldwass test
 
 ```
 
@@ -639,6 +640,19 @@ kable(b, digits = 2, caption = "Blank Particle Count.") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
   scroll_box(width = "700px", height = "200px")
 
+blank_stats <- b %>% 
+  ungroup() %>% 
+  group_by(Matrix) 
+
+# shapiro.test(log10(blank_stats$`Total Particles`)) #Normal distribution after log transformation
+# bartlett.test(log10(`Total Particles`) ~ Matrix, data = blank_stats) #Equal variance after log transformation
+# x <- aov(log10(`Total Particles`) ~ Matrix, data = blank_stats) #p = 0.00733
+# summary(x)
+# TukeyHSD(x) #Significant differences between clean and dirty water
+
+kruskal.test(`Total Particles` ~ Matrix, data = blank_stats)
+Steel.Dwass(blank_stats$`Total Particles`, as.character(blank_stats$Matrix))
+
 #Total - Summary
 c <- Results_Clean_Microscopy %>%
   filter(!(labid == "Z"&sampletype_f == "Clean Water")) %>%
@@ -692,9 +706,9 @@ kable(d, digits = 2, caption = "Blank Particle Count.") %>%
 
 ```
 
-```{r Manuscript Figure 3, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+```{r Manuscript Figure S2, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
 
-Fig3 <- Results_Clean_Microscopy %>%
+FigS2 <- Results_Clean_Microscopy %>%
   filter(!(labid == "Z"&sampletype_f == "Clean Water")) %>%
   filter(!(labid == "M"&sampletype_f == "Dirty Water")) %>%
   filter(!(labid == "M"&sampletype_f == "Fish Tissue")) %>%
@@ -713,7 +727,7 @@ Fig3 <- Results_Clean_Microscopy %>%
   theme_test() +
   geom_point(aes(color = sampletype_f, fill = sampletype_f, alpha = 0.7), size = 3) +
   geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
-  theme(text = element_text(size = 16),
+  theme(text = element_text(size = 20),
         plot.title = element_text(hjust = 0.5),
         legend.position = "none",
         axis.title.x = element_blank(),
@@ -723,9 +737,9 @@ Fig3 <- Results_Clean_Microscopy %>%
   expand_limits(y = 0) +
   labs(y = "Particle Count")
   
-plot(Fig3)
+plot(FigS2)
 
-saveRDS(Fig3, file = "./Manuscript_Figures/Fig3")
+saveRDS(FigS2, file = "./Manuscript_Figures/FigS2")
 
 ```
 
@@ -1271,10 +1285,10 @@ kable(l, digits = 2, caption = "Microscopy: Total Particle Recovery by Size Frac
 
 ```
 
-```{r Manuscript Fig S3, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+```{r Manuscript Fig S7, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
 
 #All Size Fractions
-FigS3 <- Join_Microscopy_SizeFraction %>%  
+FigS7 <- Join_Microscopy_SizeFraction %>%  
   filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
@@ -1300,7 +1314,7 @@ FigS3 <- Join_Microscopy_SizeFraction %>%
   geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
   geom_hline(yintercept = 100, linetype = "dotted")+
   facet_wrap(~sizefraction_f, nrow = 1, scales = "free")+
-  theme(text = element_text(size = 15),
+  theme(text = element_text(size = 20),
         legend.position = "right",
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
@@ -1310,9 +1324,9 @@ FigS3 <- Join_Microscopy_SizeFraction %>%
   expand_limits(y = 0) +
   labs(y = "Recovery (%)", fill = "Matrix", color = "Matrix")
 
-plot(FigS3)
+plot(FigS7)
 
-saveRDS(FigS3, file = "./Manuscript_Figures/FigS3")
+saveRDS(FigS7, file = "./Manuscript_Figures/FigS7")
 
 ```
 
@@ -1744,10 +1758,10 @@ kable(n, digits = 2, caption = "Microscopy: Total Particle Recovery by Color. Su
   
 ```
 
-```{r Manuscript Fig S4, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+```{r Manuscript Fig S8, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
 
 #All Colors
-FigS4 <- Join_Microscopy_Color %>%
+FigS8 <- Join_Microscopy_Color %>%
   filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
@@ -1771,7 +1785,7 @@ FigS4 <- Join_Microscopy_Color %>%
   geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
   geom_hline(yintercept = 100, linetype = "dotted")+
   facet_wrap(~color_f, nrow = 1, scales = "free")+
-  theme(text = element_text(size = 15),
+  theme(text = element_text(size = 20),
         legend.position = "right",
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
@@ -1781,9 +1795,9 @@ FigS4 <- Join_Microscopy_Color %>%
   expand_limits(y = 0) +
   labs(y = "Recovery (%)", fill = "Matrix", color = "Matrix") 
 
-plot(FigS4)
+plot(FigS8)
 
-saveRDS(FigS4, file = "./Manuscript_Figures/FigS4")
+saveRDS(FigS8, file = "./Manuscript_Figures/FigS8")
 
 ```
 
@@ -2085,9 +2099,9 @@ kable(j, digits = 2, caption = "Microscopy: Total Particle Recovery by Morpholog
   scroll_box(width = "700px", height = "200px")
 ```
 
-```{r Manuscript Fig S5, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+```{r Manuscript Fig S9, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
 
-FigS5 <- Join_Microscopy_Morphology %>%
+FigS9 <- Join_Microscopy_Morphology %>%
   filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
@@ -2111,7 +2125,7 @@ FigS5 <- Join_Microscopy_Morphology %>%
   geom_boxplot(alpha = 0.7,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
   geom_hline(yintercept = 100, linetype = "dotted")+
   facet_wrap(~morphology_f, ncol = 3, scales = "free")+
-  theme(text = element_text(size = 15),
+  theme(text = element_text(size = 20),
         legend.position = "right",
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
@@ -2121,9 +2135,9 @@ FigS5 <- Join_Microscopy_Morphology %>%
   expand_limits(y = 0) +
   labs(y = "Recovery (%)", fill = "Matrix", color = "Matrix") 
 
-plot(FigS5)
+plot(FigS9)
 
-saveRDS(FigS5, file = "./Manuscript_Figures/FigS5")
+saveRDS(FigS9, file = "./Manuscript_Figures/FigS9")
 
 ```
 
@@ -2934,10 +2948,10 @@ kable(e, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary sta
   scroll_box(width = "700px", height = "200px")
 ```
 
-```{r Manuscript Fig 2, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+```{r Manuscript Fig 1C, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
 
 #Total - Summary
-Fig2<- Join_Microscopy_Total %>%
+Fig1C<- Join_Microscopy_Total %>%
   filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   mutate(sampletype_f = case_when(
@@ -2959,8 +2973,8 @@ Fig2<- Join_Microscopy_Total %>%
   geom_point(aes(color = sampletype_f, fill = sampletype_f, alpha = 0.7), size = 3) +
   geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
   geom_hline(yintercept = 100, linetype = "dotted")+
-  theme(text = element_text(size = 15),
-        plot.title = element_text(hjust = 0.5),
+  theme(text = element_text(size = 20),
+        plot.title = element_text(hjust = 0.5, vjust = -6),
         plot.subtitle = element_text(hjust = 0.5),
         legend.position = "none",
         axis.title.x = element_blank(),
@@ -2970,16 +2984,16 @@ Fig2<- Join_Microscopy_Total %>%
   expand_limits(y = 0) +
   labs(y = "Recovery (%)", title = "> 212 µm")
 
-plot(Fig2)
+plot(Fig1C)
 
-saveRDS(Fig2, file = "./Manuscript_Figures/Fig2")
+saveRDS(Fig1C, file = "./Manuscript_Figures/Fig1C")
 
 ```
 
-```{r Manuscript Fig S2, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+```{r Manuscript Fig S10, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
 
 #Total - By Lab
-FigS2 <- Join_Microscopy_Total %>%
+FigS10 <- Join_Microscopy_Total %>%
   filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   ungroup() %>% 
@@ -2996,7 +3010,7 @@ FigS2 <- Join_Microscopy_Total %>%
   stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
   stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
   facet_wrap(~sampletype_f, ncol = 2)+
-  theme(text = element_text(size = 15),
+  theme(text = element_text(size = 20),
         plot.title = element_text(hjust = 0.5),
         legend.position = "none",
         axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
@@ -3006,9 +3020,9 @@ FigS2 <- Join_Microscopy_Total %>%
   expand_limits(y = 0) +
   labs(y = "Recovery (%)", x = "Lab", title = "> 212 µm")
 
-plot(FigS2)
+plot(FigS10)
 
-saveRDS(FigS2, file = "./Manuscript_Figures/FigS2")
+saveRDS(FigS10, file = "./Manuscript_Figures/FigS10")
 
 ```
 
@@ -3242,10 +3256,10 @@ kable(l, digits = 2, caption = "Microscopy: Total Particle Recovery by Size Frac
 
 ```
 
-```{r Manuscript Fig S6, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+```{r Manuscript Fig S11, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
 
 #All Size Fractions
-FigS6 <- Join_Microscopy_SizeFraction %>%
+FigS11 <- Join_Microscopy_SizeFraction %>%
   filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   ungroup() %>%
@@ -3271,7 +3285,7 @@ FigS6 <- Join_Microscopy_SizeFraction %>%
   geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
   geom_hline(yintercept = 100, linetype = "dotted")+
   facet_wrap(~sizefraction_f, nrow = 1, scales = "free")+
-  theme(text = element_text(size = 15),
+  theme(text = element_text(size = 20),
         legend.position = "right",
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
@@ -3281,9 +3295,9 @@ FigS6 <- Join_Microscopy_SizeFraction %>%
   expand_limits(y = 0) +
   labs(y = "Recovery (%)", fill = "Matrix", color = "Matrix")
 
-plot(FigS6)
+plot(FigS11)
 
-saveRDS(FigS6, file = "./Manuscript_Figures/FigS6")
+saveRDS(FigS11, file = "./Manuscript_Figures/FigS11")
 
 ```
 
@@ -3702,10 +3716,10 @@ kable(n, digits = 2, caption = "Microscopy: Total Particle Recovery by Color. Su
   
 ```
 
-```{r Manuscript Fig S7, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+```{r Manuscript Fig S12, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
 
 #All Colors
-FigS7 <- Join_Microscopy_Color %>%
+FigS12 <- Join_Microscopy_Color %>%
   filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   mutate(sampletype_f = case_when(
@@ -3728,7 +3742,7 @@ FigS7 <- Join_Microscopy_Color %>%
   geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
   geom_hline(yintercept = 100, linetype = "dotted")+
   facet_wrap(~color_f, nrow = 1, scales = "free")+
-  theme(text = element_text(size = 15),
+  theme(text = element_text(size = 20),
         legend.position = "right",
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
@@ -3738,9 +3752,9 @@ FigS7 <- Join_Microscopy_Color %>%
   expand_limits(y = 0) +
   labs(y = "Recovery (%)", fill = "Matrix", color = "Matrix") 
 
-plot(FigS7)
+plot(FigS12)
 
-saveRDS(FigS7, file = "./Manuscript_Figures/FigS7")
+saveRDS(FigS12, file = "./Manuscript_Figures/FigS12")
 
 ```
 
@@ -4035,9 +4049,9 @@ kable(j, digits = 2, caption = "Microscopy: Total Particle Recovery by Morpholog
   scroll_box(width = "700px", height = "200px")
 ```
 
-```{r Manuscript Fig S8, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+```{r Manuscript Fig S13, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
 
-FigS8 <- Join_Microscopy_Morphology %>%
+FigS13 <- Join_Microscopy_Morphology %>%
   filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(plastic_f != "N") %>%
   mutate(sampletype_f = case_when(
@@ -4060,7 +4074,7 @@ FigS8 <- Join_Microscopy_Morphology %>%
   geom_boxplot(alpha = 0.7,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
   geom_hline(yintercept = 100, linetype = "dotted")+
   facet_wrap(~morphology_f, ncol = 3, scales = "free")+
-  theme(text = element_text(size = 15),
+  theme(text = element_text(size = 20),
         legend.position = "right",
         axis.text.x = element_blank(),
         axis.title.x = element_blank(),
@@ -4070,9 +4084,9 @@ FigS8 <- Join_Microscopy_Morphology %>%
   expand_limits(y = 0) +
   labs(y = "Recovery (%)", fill = "Matrix", color = "Matrix") 
 
-plot(FigS8)
+plot(FigS13)
 
-saveRDS(FigS8, file = "./Manuscript_Figures/FigS8")
+saveRDS(FigS13, file = "./Manuscript_Figures/FigS13")
 
 ```
 
@@ -4213,121 +4227,4 @@ print(kable(d, digits = 2, caption = paste(df$sizefraction_f[[i]], df$color_f[[i
 
 ```
 
-# Performance By Sample Number
-
-```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, results = 'asis', fig.height = 10}
-
-library(ggpubr)
-
-df <- Join_Microscopy_Total %>% 
-  group_by(sampletype_f) %>% 
-  summarise()
-
-for (i in 1:nrow(df))
-
-{ #Open loop
-
-a <- Join_Microscopy_Total %>%
-  filter(sampletype_f == df$sampletype_f[[i]],
-         plastic_f == "Y") %>%
-  mutate(sample_number = as.numeric(str_extract(sampleid, "\\d"))) %>% 
-  group_by(labid) %>% 
-  filter(n()>2)
-  
-b <- ggscatter(a, x = "sample_number", y = "total_pct_recovery", 
-            add = "reg.line", conf.int = TRUE, 
-            cor.coef = TRUE, cor.method = "spearman")+ 
-     facet_wrap(~labid, scales = "free")+
-     theme_test()+
-     labs(x = "Sample Number", y = "Recovery (%)", title = paste(df$sampletype_f[[i]]),
-          subtitle = "Spearman's Rank-Order Correlation of Recovery by Sample Number within Lab")
-
-plot(b)
-
-} #Close loop
-
-```
-
-### Team Recov stuff
-
-```{r echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.width = 12, fig.height = 10, fig.height = 10}
-#Total - Summary
-c<- Join_Microscopy_Total %>%
-  filter(plastic_f != "N") %>%
-  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
-  #Data manipulation
-  group_by(sampletype_f, labid, sampleid, microscopy_f, total_pct_recovery) %>% 
-  summarise() %>% 
-  group_by(sampletype_f, labid) %>% 
-  mutate(total_pct_recovery_mean = mean(total_pct_recovery)) %>% 
-  ungroup() %>% 
-  group_by(sampletype_f, labid, microscopy_f, total_pct_recovery_mean) %>% 
-  summarise() %>% 
-  #Creating plot
-  ggplot(aes(x=microscopy_f, y= total_pct_recovery_mean)) +
-  theme_test() +
-  geom_rect(ymin = 95.7, ymax = 104.3, xmin = 0, xmax = Inf, color = "gray87", fill = "gray87", alpha = 0.5)+
-  geom_point(aes(color = sampletype_f, fill = sampletype_f, alpha = 0.7), width = .05, size = 3) +
-  geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
-  geom_hline(yintercept = 100, linetype = "dotted")+
-  facet_wrap(~sampletype_f, ncol = 4)+
-  theme(text = element_text(size = 12),
-        plot.title = element_text(hjust = 0.5),
-        plot.subtitle = element_text(hjust = 0.5),
-        legend.position = "none",
-        axis.text.x = element_blank(),
-        axis.title.x = element_blank(),
-        axis.ticks.x = element_blank())+
-  scale_color_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4")) +   
-  scale_fill_manual(values = c("royalblue", "forestgreen", "darksalmon", "goldenrod4")) +
-  expand_limits(y = 0) +
-  labs(y = "Recovery (%)", fill = "Lab", title = "Microscopy", subtitle = "Total Particle Recovery", caption = "Points represent the sample mean (n = 1-3) of each laboratory.\nDotted line and shaded area represent 100% recovery of polymer materials and RSD, respectively.\nNot blank corrected.")
-
-plot(c)
-
-e <- Join_Microscopy_Total %>%
-  filter(plastic_f != "N") %>%
-  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
-  group_by(sampletype_f, labid) %>% 
-  mutate(mean_lab = mean(total_pct_recovery)) %>% 
-  ungroup() %>%
-  distinct(sampletype_f, labid, mean_lab) %>%
-  group_by(sampletype_f) %>% 
-  mutate(`Mean (%)`= mean(mean_lab)) %>%    
-  mutate(`Median (%)` = median(mean_lab)) %>%
-  mutate(`SD (%)` = sd(mean_lab)) %>%
-  mutate(`SE (%)` = std.error(mean_lab)) %>%
-  mutate(`Min (%)` = min(mean_lab)) %>% 
-  mutate(`Max (%)` = max(mean_lab)) %>%
-  ungroup() %>% 
-  rename("Matrix" = sampletype_f) %>% 
-  select(`Matrix`, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
-  distinct() 
-
-kable(e, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary statistics across all laboratories. Not blank corrected.")%>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) #%>% 
-  # scroll_box(width = "700px", height = "200px")
-
-d <- Join_Microscopy_Total %>%
-  filter(plastic_f != "N") %>%
-  filter(!(labid %in% c("AA", "L", "M", "Q", "R"))) %>%
-  group_by(sampletype_f, labid) %>% 
-  mutate(`Mean (%)`= mean(total_pct_recovery)) %>%  
-  mutate(`Median (%)` = median(total_pct_recovery)) %>%
-  mutate(`SD (%)` = sd(total_pct_recovery)) %>%
-  mutate(`SE (%)` = std.error(total_pct_recovery)) %>%
-  mutate(`Min (%)` = min(total_pct_recovery)) %>% 
-  mutate(`Max (%)` = max(total_pct_recovery)) %>%
-  ungroup() %>% 
-  select(sampletype_f, labid, `Mean (%)`, `Median (%)`, `SD (%)`, `SE (%)`, `Min (%)`, `Max (%)`) %>%
-  rename("Matrix" = sampletype_f) %>%  
-  rename("Lab ID" = labid) %>%
-  distinct() 
-
-kable(d, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary statistics by laboratory (n = 1-3 samples). Not blank corrected.") %>%
-  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>% 
-  scroll_box(width = "700px", height = "200px")
-
-```
-
-End of Analysis. 
+End of Analysis.

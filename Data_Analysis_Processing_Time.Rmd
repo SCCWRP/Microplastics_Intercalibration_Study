@@ -9,13 +9,14 @@ output:
     number_sections: true
     toc_float: true
 ---
-![](../www/logobanner.png)
+![](www/logobanner.png)
 ```{r Install Packages, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 
 #### Packages ####
 library(tidyverse)#A ton of useful functions
 library(knitr) #Needed to display table
 library(kableExtra)#data tables
+library(Steel.Dwass.test) #steeldwass test
 
 ```
 
@@ -323,7 +324,13 @@ Time_Raman_Sample <- Raman %>%
   filter(time != -88) %>% 
   
   group_by(sampleid) %>% 
-  mutate(time_sample = sum(time)) 
+  mutate(time_sample = sum(time)) %>% 
+  
+  #Correction to time for Raman analysis for Lab BB - submitted incorrectly
+  mutate(time_sample = case_when(grepl("BB_FT_5", sampleid) ~ 26.683,
+                                 grepl("BB_FT_6", sampleid) ~ 23.133,
+                                 grepl("BB_FT_7", sampleid) ~ 16.65,
+                                 TRUE ~ as.numeric(time_sample)))
 
 Time_Raman_Lab <- Time_Raman_Sample %>%
   ungroup() %>% 
@@ -344,32 +351,40 @@ Time_Raman_Lab <- Time_Raman_Sample %>%
 ```{r Data Tidying - Images and measurements, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 
 #Tidying of microscopy and nile red data to ensure proper merge
-Results <- Results %>% 
-  #drop labs F, D, T and WW from clean water samples
-  filter(!(labid == "F" & sampletype == "CW")) %>% 
-  filter(!(labid == "D" & sampletype == "CW")) %>%
-  filter(!(labid == "T" & sampletype == "CW")) %>%
-  #Exclude sediment augmentation data
-  filter(!(labid %in% c("R","D") & grepl("5|6|7|8", sampleid) & sampletype %in% c("SD"))) %>%
-  #Exclude second set from lab N
-  filter(!(labid == "N" & grepl("5|6|7|8", sampleid) & sampletype == "CW")) %>%
+Results_M <- Results %>% 
+  #remove fake lab 
+  filter(labid != "ACME") %>%
+  mutate(sampletype = case_when(grepl("CW", sampleid) ~ "CW",
+                            grepl("DW", sampleid) ~ "DW",
+                            grepl("FT", sampleid) ~ "FT",
+                            grepl("SD", sampleid) ~ "SD")) %>% 
+  #Removed lab D - incomparable with other data - deviation from methods
+  filter(!(labid == "D"&sampletype == "CW")) %>%
+  #Removed pygcms data data
+  filter(!(labid == "T"&sampletype == "CW")) %>%
+  filter(!(labid == "F"&sampletype == "CW")) %>%
+  #Removed second set from Lab N - 2nd set of samples processed
+  filter(!(labid == "N"&sampletype == "CW"&(grepl("5|6|7|8", sampleid)))) %>% 
+  #Removed labs that submitted clean water data late (want to match with original clean water data analysis)
+  filter(!(labid == "WW"&sampletype == "CW")) %>%
+  filter(!(labid == "NN"&sampletype == "CW")) %>%
   #Exclude augmentation data
-  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & sampletype %in% c("SD"))) %>% 
-  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & sampletype %in% c("FT"))) 
+  filter(!(labid %in% c("R","D", "L") & grepl("5|6|7|8", sampleid) & sampletype %in% c("Sediment"))) %>% 
+  filter(!(labid %in% c("L") & grepl("5|6|7|8|9|10|11|12", sampleid) & sampletype %in% c("Fish Tissue")))
 
 #Select expertise data for clean water
 Expertise <- Lab_Info %>%
   select(labid, expertiseextraction, expertisevisualmicroscopy, expertisenilered, expertiseftir, expertiseraman, expertisepy_gcms)
 
 #Join expertise data to results data frame
-Results <- Results %>% 
+Results_M <- Results_M %>% 
    left_join(Expertise, by = c("labid" = "labid"))
 
 ```
 
 ```{r Measurements Tidying, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 
-Measurement_Time <- Results %>%
+Measurement_Time <- Results_M %>%
   filter(!grepl("4", sampleid)) %>% #Remove results for blanks
   filter(!grepl("8", sampleid)) %>% #Remove results for blanks
   mutate(timeimagesmeasurements = na_if(timeimagesmeasurements, "0")) %>% # Where labs have entered 0 for time, this is assumed that time was not recorded
@@ -405,6 +420,108 @@ Measurement_Time_Lab <- Measurement_Time_Sample %>%
   group_by(matrix) %>% 
   mutate(mean = mean(time_lab)) %>% #Mean across all labs
   mutate(sd = sd(time_lab))   #SD across all labs
+
+```
+
+```{r Count Particles Analyzed by Each Method, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
+
+Results_Count <- Results %>% 
+  #Removed lab D - incomparable with other data - deviation from methods
+  filter(!(labid == "D"&sampletype == "CW")) %>%
+  #Removed pygcms data data
+  filter(!(labid == "T"&sampletype == "CW")) %>%
+  filter(!(labid == "F"&sampletype == "CW")) %>%
+  #Removed second set from Lab N - 2nd set of samples processed
+  filter(!(labid == "N"&sampletype == "CW"&(grepl("5|6|7|8", sampleid)))) %>% 
+  #Removed labs that submitted clean water data late (want to match with original clean water data analysis)
+  filter(!(labid == "WW"&sampletype == "CW")) %>%
+  filter(!(labid == "NN"&sampletype == "CW")) %>%
+  
+  rename("microscopy" = stereoscope) %>% 
+  rename("nilered" = fluorescencestaining)
+
+#Particles Counted for Microscopy
+Results_Count_Microscopy <- Results_Count %>% 
+  #Create factor for sampletype
+  mutate(sampletype_f = as.factor(sampletype)) %>%
+  #Create factor for microscopy
+  mutate(microscopy_f = as.factor(microscopy)) %>%
+  #Select particles analyzed by microscopy
+  # filter(microscopy_f == "Yes") %>%
+  group_by(sampletype_f, sampleid) %>% 
+  #Total particles per sample
+  mutate(total = n_distinct(sampleid, particleid)) %>% 
+  ungroup() %>% 
+  group_by(labid, sampleid, total) %>% 
+  summarise()
+
+#Join DF for number of particles to microscopy DF
+Time_Microscopy_Particle <- Time_Microscopy_Sample %>% 
+  group_by(labid, sampleid, matrix, time_sample) %>% 
+  summarise() %>%  
+  left_join(Results_Count_Microscopy, by = c("sampleid" = "sampleid", "labid" = "labid")) %>% 
+  mutate(time_particle_sample_min = (time_sample/total)*60) %>% 
+  group_by(labid, matrix) %>% 
+  mutate(time_particle_lab_min = mean(time_particle_sample_min)) %>% 
+  ungroup() %>% 
+  group_by(matrix) %>% 
+  mutate(mean = mean(time_particle_lab_min)) %>% #Mean across all labs
+  mutate(sd = sd(time_particle_lab_min))   #SD across all labs
+
+#Particles Counted for FTIR
+Results_Count_FTIR <- Results_Count %>% 
+  #Create factor for sampletype
+  mutate(sampletype_f = as.factor(sampletype)) %>%
+  #Select particles analyzed by FTIR
+  filter(ftir == "Yes") %>% 
+  group_by(sampletype_f, sampleid) %>% 
+  #Total particles per sample
+  mutate(total = n_distinct(sampleid, particleid)) %>% 
+  ungroup() %>% 
+  group_by(labid, sampleid, total) %>% 
+  summarise()
+
+#Join DF for number of particles to FITR DF
+Time_FTIR_Particle <- Time_FTIR_Sample %>% 
+  group_by(labid, sampleid, matrix, time_sample) %>% 
+  summarise() %>%  
+  left_join(Results_Count_FTIR, by = c("sampleid" = "sampleid", "labid" = "labid")) %>% 
+  mutate(time_particle_sample_min = (time_sample/total)*60) %>% 
+  group_by(labid, matrix) %>% 
+  mutate(time_particle_lab_min = mean(time_particle_sample_min)) %>% 
+  ungroup() %>% 
+  group_by(matrix) %>% 
+  mutate(mean = mean(time_particle_lab_min)) %>% #Mean across all labs
+  mutate(sd = sd(time_particle_lab_min))   #SD across all labs
+
+#Particles Counted for Raman
+Results_Count_Raman <- Results_Count %>% 
+  #Count all particles for lab BB as Raman (submission error)
+  mutate(raman = if_else(labid == "BB" & sampletype == "FT", "Yes", raman)) %>% 
+  #Create factor for sampletype
+  mutate(sampletype_f = as.factor(sampletype)) %>%
+  #Select particles analyzed by FTIR
+  filter(raman == "Yes") %>% 
+  group_by(sampletype_f, sampleid) %>% 
+  #Total particles per sample
+  mutate(total = n_distinct(sampleid, particleid)) %>% 
+  ungroup() %>% 
+  group_by(labid, sampleid, total) %>% 
+  summarise()
+
+#Join DF for number of particles to Raman DF
+Time_Raman_Particle <- Time_Raman_Sample %>% 
+  group_by(labid, sampleid, matrix, time_sample) %>% 
+  summarise() %>%  
+  left_join(Results_Count_Raman, by = c("sampleid" = "sampleid", "labid" = "labid")) %>% 
+  drop_na(total) %>% 
+  mutate(time_particle_sample_min = (time_sample/total)*60) %>% 
+  group_by(labid, matrix) %>% 
+  mutate(time_particle_lab_min = mean(time_particle_sample_min)) %>% 
+  ungroup() %>% 
+  group_by(matrix) %>% 
+  mutate(mean = mean(time_particle_lab_min)) %>% #Mean across all labs
+  mutate(sd = sd(time_particle_lab_min))   #SD across all labs
 
 ```
 
@@ -486,6 +603,20 @@ kable(e, digits = 2, caption = "Mean Extraction Time by Matrix") %>%
 
 ```
 
+```{r Extraction Time - Statistical Tests}
+
+Time_Extraction_Lab_Stats <- Time_Extraction_Lab %>% 
+  group_by(matrix, time_lab) %>% 
+  summarise() %>% 
+  ungroup()
+
+shapiro.test(Time_Extraction_Lab_Stats$time_lab) #Not normal
+bartlett.test(time_lab ~ matrix, data = Time_Extraction_Lab_Stats) #Unequal variance
+kruskal.test(time_lab ~ matrix, data = Time_Extraction_Lab_Stats) #p < 0.05
+Steel.Dwass(Time_Extraction_Lab_Stats$time_lab, Time_Extraction_Lab_Stats$matrix)
+
+```
+
 # Microscopy Time
 
 ```{r Microscopy Time, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 10}
@@ -561,6 +692,45 @@ e <- Time_Microscopy_Lab %>%
 kable(e, digits = 2, caption = "Mean Microscopy by Matrix") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
   scroll_box(width = "700px", height = "200px")
+
+f <- Time_Microscopy_Particle %>% 
+  group_by(matrix, labid, time_particle_lab_min, mean, sd) %>% 
+  summarise() %>% 
+  ungroup() %>% 
+  group_by(matrix) %>% 
+  mutate(n = n_distinct(labid)) %>% 
+  ungroup() %>% 
+  group_by(matrix, mean, sd, n) %>% 
+  summarise() %>% 
+  rename("Matrix" = matrix, "Mean (min)" = mean, "Standard Deviation (min)" = sd, "Number of Labs" = n)
+  
+kable(f, digits = 2, caption = "Mean Microscopy by Matrix") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
+  scroll_box(width = "700px", height = "200px")
+
+```
+
+```{r Microscopy Time - Statistical Tests}
+#Sample
+Time_Microscopy_Lab_Stats <- Time_Microscopy_Lab %>% 
+  group_by(matrix, time_lab) %>% 
+  summarise() %>% 
+  ungroup()
+
+shapiro.test(Time_Microscopy_Lab_Stats$time_lab) #Not normal
+bartlett.test(time_lab ~ matrix, data = Time_Microscopy_Lab_Stats) #Unequal variance
+kruskal.test(time_lab ~ matrix, data = Time_Microscopy_Lab_Stats) #p > 0.05
+
+#Particle
+Time_Microscopy_Lab_Stats_Particle <- Time_Microscopy_Particle %>% 
+  group_by(matrix, time_particle_lab_min) %>% 
+  summarise() %>% 
+  ungroup()
+
+shapiro.test(log10(Time_Microscopy_Lab_Stats_Particle$time_particle_lab_min)) #Normal after log transformation
+bartlett.test(log10(time_particle_lab_min) ~ matrix, data = Time_Microscopy_Lab_Stats_Particle) #Equal variance after log transformation
+x <- aov(log10(time_particle_lab_min) ~ matrix, data = Time_Microscopy_Lab_Stats_Particle) #p < 0.05
+summary(x) #No difference p > 0.05
 
 ```
 
@@ -720,6 +890,32 @@ kable(e, digits = 2, caption = "Mean FTIR by Matrix") %>%
 
 ```
 
+```{r FTIR Time - Statistical Tests}
+#Sample
+Time_FTIR_Lab_Stats <- Time_FTIR_Lab %>% 
+  group_by(matrix, time_lab) %>% 
+  summarise() %>% 
+  ungroup()
+
+shapiro.test(log10(Time_FTIR_Lab_Stats$time_lab)) #Normal after log transformation
+bartlett.test(log10(time_lab) ~ matrix, data = Time_FTIR_Lab_Stats) #Equal variance after log transformation
+x <- aov(log10(time_lab) ~ matrix, data = Time_FTIR_Lab_Stats) #p > 0.05
+summary(x)
+TukeyHSD(x)
+
+#Particle
+Time_FTIR_Lab_Stats_Particle <- Time_FTIR_Particle %>% 
+  group_by(matrix, time_particle_lab_min) %>% 
+  summarise() %>% 
+  ungroup()
+
+shapiro.test(log10(Time_FTIR_Lab_Stats_Particle$time_particle_lab_min)) #Normal after log transformation
+bartlett.test(log10(time_particle_lab_min) ~ matrix, data = Time_FTIR_Lab_Stats_Particle) #Equal variance after log transformation
+x <- aov(log10(time_particle_lab_min) ~ matrix, data = Time_FTIR_Lab_Stats_Particle) #p < 0.05
+summary(x) #No difference p > 0.05
+TukeyHSD(x)
+```
+
 # Raman Time
 
 ```{r Raman Time, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 10}
@@ -798,6 +994,33 @@ kable(e, digits = 2, caption = "Mean Raman by Matrix") %>%
 
 ```
 
+```{r Raman Time - Statistical Tests}
+#Sample
+Time_Raman_Lab_Stats <- Time_Raman_Lab %>% 
+  filter(!matrix == "Fish Tissue") %>% 
+  group_by(matrix, time_lab) %>% 
+  summarise() %>% 
+  ungroup() 
+
+shapiro.test(log10(Time_Raman_Lab_Stats$time_lab)) #Normal after log transformation
+bartlett.test(log10(time_lab) ~ matrix, data = Time_Raman_Lab_Stats) #Equal variance after log transformation
+x <- aov(log10(time_lab) ~ matrix, data = Time_Raman_Lab_Stats) #p > 0.05
+summary(x)
+
+#Particle
+Time_Raman_Lab_Stats_Particle <- Time_Raman_Particle %>%
+  filter(!matrix == "FT") %>%   
+  group_by(matrix, time_particle_lab_min) %>% 
+  summarise() %>% 
+  ungroup() 
+   
+shapiro.test(sqrt(Time_Raman_Lab_Stats_Particle$time_particle_lab_min)) #Normal after log transformation
+bartlett.test(sqrt(time_particle_lab_min) ~ matrix, data = Time_Raman_Lab_Stats_Particle) #Equal variance after log transformation
+x <- aov(sqrt(time_particle_lab_min) ~ matrix, data = Time_Raman_Lab_Stats_Particle) #p < 0.05
+summary(x) #No difference p > 0.05
+
+```
+
 # Images and measurements
 
 ```{r Images and measurements, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, fig.height= 7, fig.width= 10}
@@ -870,6 +1093,63 @@ kable(e, digits = 2, caption = "Mean Images and Measurements by Matrix") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
   scroll_box(width = "700px", height = "200px")
 
+f <- Measurement_Time %>% 
+  #By Sample
+  group_by(sampletype, labid, sampleid, sizefraction) %>%  
+  #Time per size fraction per sample
+  summarise(time_sizefraction = mean(timeimagesmeasurements)) %>% #Time per sizefraction
+  ungroup() %>% 
+  #Time per sample
+  group_by(sampletype, labid, sampleid) %>%
+  mutate(time_sample = sum(time_sizefraction)) %>%
+  ungroup()
+
+Measurement_Time_Particle <- Measurement_Time %>% 
+  left_join(f, by = c("labid", "sampleid", "sizefraction", "sampletype")) %>%   
+ 
+  filter(stereoscope == "Yes") %>%
+  group_by(sampleid) %>% 
+  #Total particles per sample
+  mutate(total = n_distinct(sampleid, particleid)) %>% 
+  ungroup()%>%
+  
+  #Divide time by number of particles to get time per particle
+  mutate(time_particle = time_sample/total) %>% 
+  #Calculate lab average of time per particle
+  group_by(sampletype, labid) %>% 
+  mutate(time_particle_lab = mean(time_particle)) %>% 
+  ungroup() %>%   
+  #Calculate mean and SD across labs
+  group_by(sampletype, labid, time_particle_lab) %>% 
+  summarise() %>% 
+  ungroup() %>% 
+  group_by(sampletype) %>% 
+  mutate(mean_min = 60*mean(time_particle_lab)) %>% #Mean across all labs
+  mutate(sd_min = 60*sd(time_particle_lab)) #SD across all labs
+  
+
+```
+
+```{r Measurement Time - Statistical Tests}
+#Sample
+Measurement_Time_Lab_Stats <- Measurement_Time_Lab %>% 
+  group_by(matrix, time_lab) %>% 
+  summarise() %>% 
+  ungroup()
+
+shapiro.test(Measurement_Time_Lab_Stats$time_lab) #Not normal
+bartlett.test(time_lab ~ matrix, data = Measurement_Time_Lab_Stats) #Equal variance
+kruskal.test(time_lab ~ matrix, data = Measurement_Time_Lab_Stats) #p > 0.05
+
+#Particle
+Measurement_Time_Lab_Stats <- Measurement_Time_Particle %>% 
+  group_by(sampletype, time_particle_lab) %>% 
+  summarise() %>% 
+  ungroup()
+
+shapiro.test(Measurement_Time_Lab_Stats$time_particle_lab) #Not normal
+bartlett.test(time_particle_lab ~ sampletype, data = Measurement_Time_Lab_Stats) #Equal variance
+kruskal.test(time_particle_lab ~ sampletype, data = Measurement_Time_Lab_Stats) #p > 0.05
 ```
 
 End of Analysis. 

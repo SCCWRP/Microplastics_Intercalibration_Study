@@ -10,7 +10,7 @@ output:
     toc_float: true
 ---
 
-![](../www/logobanner.png)
+![](www/logobanner.png)
 
 ```{r Packages, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 
@@ -688,10 +688,10 @@ kable(e, digits = 2, caption = "Microscopy: Total Particle Recovery. Summary sta
   scroll_box(width = "700px", height = "200px")
 ```
 
-```{r Manuscript Fig 1B, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+```{r Manuscript Fig 1A, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
 
 #Total - Summary
-Fig1B<- Join_Microscopy_Total %>%
+Fig1A<- Join_Microscopy_Total %>%
   filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>%
   filter(plastic_f != "N") %>%
@@ -713,8 +713,8 @@ Fig1B<- Join_Microscopy_Total %>%
   geom_point(aes(color = sampletype_f, fill = sampletype_f, alpha = 0.7), width = .05, size = 3) +
   geom_boxplot(alpha = 0.5,aes(color = sampletype_f, fill = sampletype_f), outlier.shape = NA) +
   geom_hline(yintercept = 100, linetype = "dotted")+
-  theme(text = element_text(size = 15),
-        plot.title = element_text(hjust = 0.5),
+  theme(text = element_text(size = 20),
+        plot.title = element_text(hjust = .5, vjust = -6),
         legend.position = "none",
         axis.title.x = element_blank(),
         axis.ticks.x = element_blank())+
@@ -724,16 +724,16 @@ Fig1B<- Join_Microscopy_Total %>%
   ylim(0,250)+
   labs(y = "Recovery (%)", title = "< 20 µm")
 
-plot(Fig1B)
+plot(Fig1A)
 
-saveRDS(Fig1B, file = "./Manuscript_Figures/Fig1B")
+saveRDS(Fig1A, file = "./Manuscript_Figures/Fig1A")
 
 ```
 
-```{r Manuscript Figure S1B, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
+```{r Manuscript Figure S5A, echo = FALSE, error = FALSE, warning = FALSE, message = FALSE, include = FALSE}
 
 #Total - By Lab
-FigS1B <- Join_Microscopy_Total %>%
+FigS5A <- Join_Microscopy_Total %>%
   filter(!(labid == "R"&sampletype_f == "Clean Water")) %>%
   filter(sampletype_f != "Dirty Water") %>% 
   filter(plastic_f != "N") %>%
@@ -750,7 +750,7 @@ FigS1B <- Join_Microscopy_Total %>%
   stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. - 0.25, yend=..y..))+
   stat_summary(fun="mean", geom="segment", mapping=aes(xend=..x.. + 0.25, yend=..y..))+
   facet_wrap(~sampletype_f, ncol = 3)+
-  theme(text = element_text(size = 15),
+  theme(text = element_text(size = 20),
         legend.position = "none",
         plot.title = element_text(hjust = 0.5),
         axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
@@ -760,9 +760,9 @@ FigS1B <- Join_Microscopy_Total %>%
   expand_limits(y = 0) +
   labs(y = "Recovery (%)", x = "Lab", title = "< 20 µm")
 
-plot(FigS1B)
+plot(FigS5A)
 
-saveRDS(FigS1B, file = "./Manuscript_Figures/FigS1B")
+saveRDS(FigS5A, file = "./Manuscript_Figures/FigS5A")
 
 ```
 
