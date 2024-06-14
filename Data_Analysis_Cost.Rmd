@@ -23,7 +23,7 @@ library(kableExtra) #Needed for table features (i.e., scroll_box)
 
 ```{r Import Data, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 
-Cost <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_costresults", guess_max = 100000) #Raw data file for other matrices
+Cost <- read_csv("https://mpchecker.sccwrp.org/checker/intercal-data?table=tbl_costresults", guess_max = 100000) #Raw data file for other matrices
 
 ```
 

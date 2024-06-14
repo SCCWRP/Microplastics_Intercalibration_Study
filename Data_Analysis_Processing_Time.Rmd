@@ -22,19 +22,25 @@ library(Steel.Dwass.test) #steeldwass test
 
 ```{r Data Import, echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 
-Results <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_results_master", guess_max = 100000) #Raw data file
+Results <- read_csv("https://mpchecker.sccwrp.org/checker/intercal-data?table=tbl_results_master", guess_max = 100000) #Raw data file
 
-Lab_Info <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_labinformation", guess_max = 100000) #Import .csv file containing all lab information for clean water
+Lab_Info <- read_csv("https://mpchecker.sccwrp.org/checker/intercal-data?table=tbl_labinformation", guess_max = 100000) #Import .csv file containing all lab information for clean water
 
-Extraction <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_sampleextraction", guess_max = 100000) #Raw data file for other matrices
+Extraction <- read_csv("https://mpchecker.sccwrp.org/checker/intercal-data?table=tbl_sampleextraction", guess_max = 100000) #Raw data file for other matrices
 
-Microscopy <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_microscopysettings", guess_max = 100000) #Raw data file for other matrices
+Microscopy <- read_csv("https://mpchecker.sccwrp.org/checker/intercal-data?table=tbl_microscopysettings", guess_max = 100000) #Raw data file for other matrices
 
-NileRed <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_nileredsettings", guess_max = 100000) #Raw data file for other matrices
+NileRed <- read_csv("https://mpchecker.sccwrp.org/checker/intercal-data?table=tbl_nileredsettings", guess_max = 100000) #Raw data file for other matrices
 
-FTIR <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_ftirsettings", guess_max = 100000) #Raw data file for other matrices
+FTIR <- read_csv("https://mpchecker.sccwrp.org/checker/intercal-data?table=tbl_ftirsettings", guess_max = 100000) #Raw data file for other matrices
 
-Raman <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_ramansettings", guess_max = 100000) #Raw data file for other matrices
+Raman <- read_csv("https://mpchecker.sccwrp.org/checker/intercal-data?table=tbl_ramansettings", guess_max = 100000) #Raw data file for other matrices
+
+```
+
+```{r}
+
+
 
 ```
 
@@ -417,7 +423,8 @@ Measurement_Time_Lab <- Measurement_Time_Sample %>%
   group_by(matrix, labid, time_lab) %>%
   summarise()%>%
   ungroup() %>%
-  group_by(matrix) %>% 
+  group_by(matrix) %>%
+  mutate(median = median(time_lab)) %>% 
   mutate(mean = mean(time_lab)) %>% #Mean across all labs
   mutate(sd = sd(time_lab))   #SD across all labs
 
@@ -486,14 +493,22 @@ Time_FTIR_Particle <- Time_FTIR_Sample %>%
   group_by(labid, sampleid, matrix, time_sample) %>% 
   summarise() %>%  
   left_join(Results_Count_FTIR, by = c("sampleid" = "sampleid", "labid" = "labid")) %>% 
-  mutate(time_particle_sample_min = (time_sample/total)*60) %>% 
-  group_by(labid, matrix) %>% 
-  mutate(time_particle_lab_min = mean(time_particle_sample_min)) %>% 
-  ungroup() %>% 
-  group_by(matrix) %>% 
+  mutate(time_particle_sample_min = (time_sample/total)*60) %>%
+  group_by(labid, matrix) %>%
+  mutate(time_particle_lab_min = mean(time_particle_sample_min)) %>%
+  ungroup() %>%
+  # group_by(matrix) %>%
   mutate(mean = mean(time_particle_lab_min)) %>% #Mean across all labs
-  mutate(sd = sd(time_particle_lab_min))   #SD across all labs
-
+  mutate(sd = sd(time_particle_lab_min)) %>% #SD across all labs
+  mutate(max = max(time_particle_lab_min)) %>% 
+  mutate(min = min(time_particle_lab_min)) %>% 
+  mutate(n_samples = n_distinct(sampleid)) %>% 
+  mutate(n_labs = n_distinct(labid)) %>% 
+  ungroup() %>% 
+  group_by(mean, sd, min, max, n_samples, n_labs) %>% 
+  summarise()
+  
+  
 #Particles Counted for Raman
 Results_Count_Raman <- Results_Count %>% 
   #Count all particles for lab BB as Raman (submission error)
@@ -588,14 +603,15 @@ e <- Time_Extraction_Lab %>%
   group_by(matrix, labid, time_lab) %>% 
   summarise() %>%   
   ungroup() %>% 
-  group_by(matrix) %>% 
+  group_by(matrix) %>%
+  mutate(median = median(time_lab)) %>% 
   mutate(mean = mean(time_lab)) %>%
   mutate(sd = sd(time_lab)) %>%
   mutate(n = n_distinct(labid)) %>% 
   ungroup() %>% 
-  group_by(matrix, mean, sd, n) %>% 
+  group_by(matrix, median, mean, sd, n) %>% 
   summarise() %>% 
-  rename("Matrix" = matrix, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
+  rename("Matrix" = matrix, "Median" = median, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
   
 kable(e, digits = 2, caption = "Mean Extraction Time by Matrix") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
@@ -681,13 +697,14 @@ e <- Time_Microscopy_Lab %>%
   summarise() %>% 
   ungroup() %>% 
   group_by(matrix) %>% 
+  mutate(median = median(time_lab)) %>% 
   mutate(mean = mean(time_lab)) %>%
   mutate(sd = sd(time_lab)) %>%
   mutate(n = n_distinct(labid)) %>% 
   ungroup() %>% 
-  group_by(matrix, mean, sd, n) %>% 
+  group_by(matrix, median, mean, sd, n) %>% 
   summarise() %>% 
-  rename("Matrix" = matrix, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
+  rename("Matrix" = matrix, "Median" = median, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
   
 kable(e, digits = 2, caption = "Mean Microscopy by Matrix") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
@@ -876,13 +893,14 @@ e <- Time_FTIR_Lab %>%
   summarise() %>% 
   ungroup() %>% 
   group_by(matrix) %>% 
+  mutate(median = median(time_lab)) %>% 
   mutate(mean = mean(time_lab)) %>%
   mutate(sd = sd(time_lab)) %>%
   mutate(n = n_distinct(labid)) %>% 
   ungroup() %>% 
-  group_by(matrix, mean, sd, n) %>% 
+  group_by(matrix, median, mean, sd, n) %>% 
   summarise() %>% 
-  rename("Matrix" = matrix, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
+  rename("Matrix" = matrix, "Median" = median, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
   
 kable(e, digits = 2, caption = "Mean FTIR by Matrix") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%
@@ -980,13 +998,14 @@ e <- Time_Raman_Lab %>%
   summarise() %>% 
   ungroup() %>% 
   group_by(matrix) %>% 
+  mutate(median = median(time_lab)) %>% 
   mutate(mean = mean(time_lab)) %>%
   mutate(sd = sd(time_lab)) %>%
   mutate(n = n_distinct(labid)) %>% 
   ungroup() %>% 
-  group_by(matrix, mean, sd, n) %>% 
+  group_by(matrix, median, mean, sd, n) %>% 
   summarise() %>% 
-  rename("Matrix" = matrix, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
+  rename("Matrix" = matrix, "Median" = median, "Mean (hours)" = mean, "Standard Deviation (hours)" = sd, "Number of Labs" = n)
   
 kable(e, digits = 2, caption = "Mean Raman by Matrix") %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) %>%

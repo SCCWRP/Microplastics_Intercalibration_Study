@@ -28,7 +28,7 @@ library(forcats) #Needed for reordering axes
 
 ```{r echo = FALSE, results = 'hide', error = FALSE, warning = FALSE, message = FALSE}
 
-Full_DB <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_results_master", guess_max = 10000)
+Full_DB <- read_csv("https://mpchecker.sccwrp.org/checker/intercal-data?table=tbl_results_master", guess_max = 10000)
 
 Full_DB$labid <- gsub("Lab","",as.character(Full_DB$labid))
 Full_DB$sampleid <- gsub("Lab","",as.character(Full_DB$sampleid))
@@ -50,7 +50,7 @@ Results <- Full_DB %>%
   rename("microscopy" = stereoscope) %>% 
   rename("nilered" = fluorescencestaining)
 
-Lab_Info <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_labinformation", guess_max = 100000) #Import .csv file containing all lab information for other matrices
+Lab_Info <- read_csv("https://mpchecker.sccwrp.org/checker/intercal-data?table=tbl_labinformation", guess_max = 100000) #Import .csv file containing all lab information for other matrices
 
 #Remove "Lab" from relevant columns
 Lab_Info$labid <- gsub("Lab","",as.character(Lab_Info$labid))
@@ -63,9 +63,9 @@ Results <- Results %>%
    #Join expertise data to results data frame
    left_join(Expertise, by = c("labid" = "labid", "sampletype" = "matrix"))  
 
-Reference <- read_csv('https://mpchecker.sccwrp.org/checker/export?table=sample_spiking_info', guess_max = 100000) #Import .csv file containing all reference spiking information for all matrices including clean water
+Reference <- read_csv('https://mpchecker.sccwrp.org/checker/intercal-data?table=sample_spiking_info', guess_max = 100000) #Import .csv file containing all reference spiking information for all matrices including clean water
 
-QA <- read_csv("https://mpchecker.sccwrp.org/checker/export?table=tbl_qa_master")
+QA <- read_csv("https://mpchecker.sccwrp.org/checker/intercal-data?table=tbl_qa_master")
 
 ```
 
